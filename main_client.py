@@ -1,7 +1,7 @@
 from client import ChatClient
 
 username = input("Enter your username: ").strip()
-client = ChatClient("127.0.0.1", 9000, username=username)
+client = ChatClient("ws://0.0.0.1:9000", 9000, username=username)
 
 while True:
     print(f"\n--- Logged in as: {client.username} ---")
