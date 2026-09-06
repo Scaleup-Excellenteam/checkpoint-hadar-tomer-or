@@ -1,7 +1,7 @@
 """
 This is the main module for the Server.
 """
-__all__ = ["heartbeat", "messaging", "state"]
+__all__ = ["messaging", "state"]
 
-from . import heartbeat, messaging, state
+from . import messaging, state
 

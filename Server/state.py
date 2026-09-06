@@ -7,7 +7,7 @@ The module allows us to lock the state variables to prevent race conditions.
 
 import asyncio
 
-# Connected users: username -> {"websocket": websocket, "last_heartbeat": float}
+# Connected users: username -> websocket
 CLIENTS = {} 
 CLIENTS_LOCK = asyncio.Lock()
 

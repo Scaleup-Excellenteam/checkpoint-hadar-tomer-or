@@ -12,7 +12,6 @@ from auth import AuthManager
 from logger import setup_logger
 import Server.state as state
 import Server.messaging as messaging
-import Server.heartbeat as heartbeat
 
 
 
@@ -72,7 +71,9 @@ async def handler(websocket):
                 await messaging.receive(websocket, data)
 
             elif action == "heartbeat":
-                await heartbeat.heartbeat(websocket)
+                # kept for compatibility, but websockets library handles heartbeats automatically.
+                logger.info(f"Heartbeat message received {websocket}")
+                await websocket.send(json.dumps({"action": "heartbeat"}))
 
             elif action == "login":
                 payload = data.get("payload", {})
@@ -85,10 +86,7 @@ async def handler(websocket):
                     token = auth.login(username, password)
 
                 if token:
-                    state.CLIENTS[username] = {
-                        "websocket": websocket,
-                        "last_heartbeat": asyncio.get_event_loop().time()
-                    }
+                    state.CLIENTS[username] = websocket
                     logger.info(f"User '{username}' logged in successfully")
                     await websocket.send(json.dumps({"action": "login_response", "token": token}))
                 else:
@@ -113,8 +111,8 @@ async def handler(websocket):
     finally:
         # Remove disconnected socket from CLIENTS
         disconnected_users = []
-        for user, client_info in list(state.CLIENTS.items()):
-            if client_info.get("websocket") == websocket:
+        for user, w_sockets in list(state.CLIENTS.items()):
+            if w_sockets == websocket:
                 disconnected_users.append(user)
                 del state.CLIENTS[user]
 
@@ -125,9 +123,7 @@ async def handler(websocket):
 async def main():
     logger.info("Starting Chat Server...")
 
-    # Start background cleanup task for stale connections
-    asyncio.create_task(heartbeat.remove_inactive_clients())
-    logger.info("Inactive clients cleanup worker started")
+
 
     async with websockets.serve(handler, "0.0.0.0", 9000):
         logger.info("Server running on ws://0.0.0.0:9000")

@@ -19,16 +19,12 @@ async def send(address, payload):
     payload - Payload of the message.
     returns True if message was succesfuly delivered, False if failed to send.
     """
-    recipient = state.CLIENTS.get(address) # verify address is valid client
-    if not recipient:
+    recipient_ws = state.CLIENTS.get(address) # verify address is valid client
+    if not recipient_ws:
         logger.error(f"Address {address} not found in CLIENTS")
         return False
 
-    recipient_ws = recipient.get("websocket")
-    if not recipient_ws:
-        logger.error(f"Websocket for address {address} not found")
-        return False
-    
+   
     logger.info(f"Sending message to: {address}")
     # try sending message, handle exceptions if raised. TODO - add retry for failed sends, 1-2 retries.
     try:
@@ -93,9 +89,9 @@ async def receive(websocket, data):
     address = payload.get("address")
     message = payload.get("message")
 
-    # register the sender's websocket connection, update new heartbeat time.
+    # register the sender's websocket connection
     if sender:
-        state.CLIENTS[sender] = { "websocket": websocket, "last_heartbeat": asyncio.get_event_loop().time() }
+        state.CLIENTS[sender] = websocket
 
     # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
     if not ( auth.validate_user_token(sender, token) or auth.validate_user_token(sender, address) ): #
