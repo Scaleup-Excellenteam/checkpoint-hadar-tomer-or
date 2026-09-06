@@ -1,30 +1,38 @@
 from client import ChatClient
 
-client = ChatClient("127.0.0.1", 5000)
+username = input("Enter your username: ").strip()
+client = ChatClient("127.0.0.1", 9000, username=username)
 
 while True:
-    print("\n1. Start chat")
+    print(f"\n--- Logged in as: {client.username} ---")
+    print("1. Start chat (set target)")
     print("2. Send message")
     print("3. Receive message")
-    print("4. Exit")
+    print("4. Heartbeat")
+    print("5. Exit")
 
-    choice = input("> ")
+    choice = input("> ").strip()
 
     if choice == "1":
-        username = input("Username: ")
-        response = client.start_chat(username)
-        print(response)
+        target = input("Target username / group address: ").strip()
+        response = client.start_chat(target)
+        print(f"Chat target set to: {response.get('chatting_with')}")
 
     elif choice == "2":
-        chat_id = input("Chat ID: ")
+        chat_id = input("Chat ID / Address (press Enter to use target): ").strip()
         message = input("Message: ")
-
         client.send_message(chat_id, message)
+        print("Message sent!")
 
     elif choice == "3":
+        print("Waiting for messages (press Ctrl+C to cancel)...")
         message = client.receive_message()
-        print(message)
+        print("Received:", message)
 
     elif choice == "4":
+        hb = client.heartbeat()
+        print("Heartbeat response:", hb)
+
+    elif choice == "5":
         client.close()
         break
