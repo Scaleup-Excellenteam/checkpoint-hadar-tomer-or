@@ -8,7 +8,6 @@ import websockets
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from auth import AuthManager
 from logger import setup_logger
 import Server.state as state
 import Server.messaging as messaging
@@ -19,7 +18,6 @@ import Server.messaging as messaging
 setup_logger("SERVER")
 logger = logging.getLogger(__name__)
 
-auth = AuthManager()
 
 
 async def manage_room(websocket, room_id, uid, token):
@@ -34,7 +32,7 @@ async def manage_room(websocket, room_id, uid, token):
     uid - user ID of the one making the request.
     token - JWT token for auth.
     """
-    if not auth.validate_user_token(uid, token):
+    if not state.auth.validate_user_token(uid, token):
         logger.warning(f"Auth failed for manage_room request by user: {uid}")
         await websocket.send(json.dumps({"error": "Auth failed"}))
         return
@@ -80,10 +78,10 @@ async def handler(websocket):
                 username = payload.get("username")
                 password = payload.get("password", "123")
 
-                token = auth.login(username, password)
+                token = state.auth.login(username, password)
                 if not token:
-                    auth.signup(username, password)
-                    token = auth.login(username, password)
+                    state.auth.signup(username, password)
+                    token = state.auth.login(username, password)
 
                 if token:
                     state.CLIENTS[username] = websocket

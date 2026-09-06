@@ -6,6 +6,9 @@ The module allows us to lock the state variables to prevent race conditions.
 """
 
 import asyncio
+from auth import AuthManager
+
+auth = AuthManager()
 
 # Connected users: username -> websocket
 CLIENTS = {} 

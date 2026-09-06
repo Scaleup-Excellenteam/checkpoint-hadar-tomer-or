@@ -4,11 +4,11 @@ This module handles messaging between the client and the server.
 import json
 import asyncio
 import Server.state as state
-import logger as logger
+import logging
 from auth import AuthManager
+logger = logging.getLogger(__name__)
 
 
-auth = AuthManager()
 
 
 async def send(address, payload):
@@ -94,7 +94,7 @@ async def receive(websocket, data):
         state.CLIENTS[sender] = websocket
 
     # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
-    if not ( auth.validate_user_token(sender, token) or auth.validate_user_token(sender, address) ): #
+    if not ( state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address) ): #
         await websocket.send(json.dumps({"error": "Auth failed"}))
         return
 
