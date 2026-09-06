@@ -3,8 +3,15 @@ from websockets.sync.client import connect
 
 
 class ChatClient:
-    def __init__(self, host="127.0.0.1", port=9000, username="hadar", password="123"):
-        self.uri = f"ws://{host}:{port}"
+    def __init__(self, host="127.0.0.1", port=9000, username=None, password="123"):
+        if not username:
+            raise ValueError("A username is required to connect.")
+
+        if host.startswith("ws://") or host.startswith("wss://"):
+            self.uri = host
+        else:
+            self.uri = f"ws://{host}:{port}"
+
         self.username = username
         self.token = None
         self.current_target = None

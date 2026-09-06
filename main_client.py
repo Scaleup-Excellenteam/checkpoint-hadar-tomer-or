@@ -1,7 +1,14 @@
 from client import ChatClient
 
-username = input("Enter your username: ").strip()
-client = ChatClient("ws://0.0.0.1:9000", 9000, username=username)
+server_ip = input("Server IP [press Enter for 127.0.0.1]: ").strip() or "127.0.0.1"
+
+while True:
+    username = input("Enter your username: ").strip()
+    if username:
+        break
+    print("Username cannot be empty.")
+
+client = ChatClient(host=server_ip, port=9000, username=username)
 
 while True:
     print(f"\n--- Logged in as: {client.username} ---")
