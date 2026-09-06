@@ -37,10 +37,14 @@ class AuthManager:
 
 
     def signup(self, username: str, password: str):
-
         if not username or not password:
             return False
-
+        
+        
+        
+        if not username or not password:
+            return False
+        
         username = username.strip()
         password = password.strip()
 
@@ -107,10 +111,15 @@ class AuthManager:
         if token not in self.sessions:
             return False
 
-        if self.sessions[token] != user:
-            return False
+        return self.sessions[token] == user
 
-        return True
+
+    def validate_user_address(self, sender: str, address: str):
+
+        if not address:
+            return False
+    
+        return address != sender
 
 
     def logout(self, token: str):
