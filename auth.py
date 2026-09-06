@@ -113,6 +113,17 @@ class AuthManager:
         return True
 
 
+    def validate_user_address(self, sender: str, address: str):
+
+        if not address:
+            return False
+
+        if address == sender:
+            return False
+
+        return True
+
+
     def logout(self, token: str):
 
         if token in self.sessions:

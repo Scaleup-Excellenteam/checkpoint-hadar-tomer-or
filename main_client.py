@@ -10,36 +10,54 @@ while True:
 
 client = ChatClient(host=server_ip, port=9000, username=username)
 
+current_room = None
+
+
+def on_message(chat_id, sender, message):
+    # Only interrupt the screen with messages for the room we're currently in.
+    if chat_id == current_room:
+        print(f"\n{sender}: {message}")
+
+
+client.set_message_handler(on_message)
+
+
+def enter_room(room):
+    global current_room
+    current_room = room
+    client.start_chat(room)
+
+    print(f"--- History with {room} ---")
+    for chat_id, sender, direction, message, timestamp in client.get_history(room):
+        who = "you" if direction == "sent" else sender
+        print(f"[{timestamp}] {who}: {message}")
+
+    print(f"--- Live chat with {room} (type /leave to go back) ---")
+    while True:
+        text = input("> ")
+        if text == "/leave":
+            break
+        client.send_message(room, text)
+
+    current_room = None
+
+
 while True:
     print(f"\n--- Logged in as: {client.username} ---")
-    print("1. Start chat (set target)")
-    print("2. Send message")
-    print("3. Receive message")
-    print("4. Heartbeat")
-    print("5. Exit")
+    print("1. Create/enter room")
+    print("2. Heartbeat")
+    print("3. Exit")
 
     choice = input("> ").strip()
 
     if choice == "1":
-        target = input("Target username / group address: ").strip()
-        response = client.start_chat(target)
-        print(f"Chat target set to: {response.get('chatting_with')}")
+        room = input("Room / username: ").strip()
+        enter_room(room)
 
     elif choice == "2":
-        chat_id = input("Chat ID / Address (press Enter to use target): ").strip()
-        message = input("Message: ")
-        client.send_message(chat_id, message)
-        print("Message sent!")
-
-    elif choice == "3":
-        print("Waiting for messages (press Ctrl+C to cancel)...")
-        message = client.receive_message()
-        print("Received:", message)
-
-    elif choice == "4":
         hb = client.heartbeat()
         print("Heartbeat response:", hb)
 
-    elif choice == "5":
+    elif choice == "3":
         client.close()
         break
