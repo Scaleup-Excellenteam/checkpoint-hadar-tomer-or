@@ -16,7 +16,8 @@ auth = AuthManager()
 
 # Connected users: user_uid -> websocket
 CLIENTS = {}
-GROUPS = []
+# dictionary of rooms
+ROOMS = {}
 
 async def send(address, payload):
     """
@@ -58,6 +59,17 @@ async def receive(websocket, data):
 
     # forward the internal message to the send() func.
     print(f"Received message from: {sender} to: {address}")
+
+    if address in ROOMS:
+        # address is room, send to room_send()
+        await room_send(address, {
+            "sender": sender,
+            "address": address,
+            "message": message
+        })
+    elif address not in CLIENTS:
+        # address does not exist
+        await websocket.send(json.dumps({"error": f"Address {address} not found"}))
     await send(address, {
         "sender": sender,
         "address": address,
@@ -72,24 +84,24 @@ async def heartbeat(websocket):
     Heartbeat message is sent from websocket to address contained in payload.
     websocket - the websocket object the message is sent from.
     """
-    logger.info(f"Heartbeat message received {websocket}")
+    #logger.info(f"Heartbeat message received {websocket}")
     asyncio.create_task(websocket.send(json.dumps({"action": "heartbeat"})))
 
-async def group_send(address, payload):
+async def room_send(address, payload):
     """
     TODO - verify async works
-    Send message to group address contained in payload.
-    group address is a type of user that holds a list of user UIDs.
+    Send message to room address contained in payload.
+    room address is a type of user that holds a list of user UIDs.
     the function iterates through the list of user UIDs and sends the message to each user.
 
     address - Address UID of the message.
     payload - Payload of the message.
     """
-    for user in GROUPS[address]:
-        # creates an async task group to send messages to each group member
-        async with asyncio.TaskGroup() as group_addresses:
-            group_addresses.create_task(send(user, payload))
-        await group_addresses.join() # awaits
+    async with asyncio.TaskGroup() as room_addresses:
+        for user in ROOMS[address]:
+            # creates an async task room to send messages to each room member
+            room_addresses.create_task(send(user, payload))
+        await room_addresses.join() # awaits the completion of all tasks in the task group
 
 
 async def handler(websocket):
@@ -118,6 +130,8 @@ async def handler(websocket):
                 CLIENTS[username] = websocket
                 await websocket.send(json.dumps({"action": "login_response", "token": token}))
 
+
+
     except websockets.ConnectionClosed:
         pass
     finally:
@@ -127,22 +141,25 @@ async def handler(websocket):
                 del CLIENTS[user]
 
 
-async def manage_room(room_id, uid):
+
+async def manage_room(websocket, room_id, uid, token):
     """
     Receive request from user.
     validate uid.
     check if room exists - if yes, add user to room.
     if not, create room and add user to room.
 
+    websocket - senders websocket object.
     room_id - room ID, the room is a special user standing in for multiple users.
     uid - user ID of the one making the request.
+    token - JWT token for auth.
     """
     if not auth.validate_user_token(uid):
         await websocket.send(json.dumps({"error": "Auth failed"}))
-    if room_id not in GROUPS:
+    if room_id not in ROOMS:
         # create room if
-        GROUPS[room_id] = []
-    GROUPS[room_id].append(uid)
+        ROOMS[room_id] = []
+    ROOMS[room_id].append(uid)
     await websocket.send(json.dumps({"action": "room_response", "payload": {"status": "success"}})) #return ack
 
 async def main():
