@@ -4,16 +4,17 @@ import json
 import asyncio
 import logging
 import websockets
+# Ensure project root is in sys.path for cross-module imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from auth import AuthManager
 from logger import setup_logger
 import Server.state as state
 import Server.messaging as messaging
 import Server.heartbeat as heartbeat
 
-# Ensure project root is in sys.path for cross-module imports
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+
 
 # Initialize logger
 setup_logger("SERVER")
