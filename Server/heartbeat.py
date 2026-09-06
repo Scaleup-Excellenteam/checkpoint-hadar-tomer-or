@@ -21,7 +21,7 @@ async def heartbeat(websocket):
     asyncio.create_task(websocket.send(json.dumps({"action": "heartbeat"})))
     async with state.CLIENTS_LOCK:
         #update last heartbeat for socket.
-        state.CLIENTS[websocket] = {websocket: websocket, "last_heartbeat": asyncio.get_event_loop().time()}  
+        state.CLIENTS[websocket] = { "websocket": websocket, "last_heartbeat": asyncio.get_event_loop().time()}  
     
 async def remove_inactive_clients():
     """

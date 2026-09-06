@@ -4,142 +4,22 @@ import json
 import asyncio
 import logging
 import websockets
-
-
-
-
-# Import your auth contracts
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from auth import AuthManager
+from logger import setup_logger
+import Server.state as state
+import Server.messaging as messaging
+import Server.heartbeat as heartbeat
+
+# Ensure project root is in sys.path for cross-module imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Initialize logger
+setup_logger("SERVER")
+logger = logging.getLogger(__name__)
 
 auth = AuthManager()
-
-# Connected users: user_uid -> websocket
-CLIENTS = {}
-# dictionary of rooms
-ROOMS = {}
-
-async def send(address, payload):
-    """
-    send message to address contained in payload.
-    checks if client is in CLIENTS (active websocket connection).
-    address - Address UID of the message.
-    payload - Payload of the message.
-    """
-    recipient_ws = CLIENTS.get(address) # verify address is valid client
-    if recipient_ws:
-        await recipient_ws.send(json.dumps({
-            "action": "receive",
-            "payload": payload
-        }))
-
-
-async def receive(websocket, data):
-    """
-    Receive message from an address contained in data.
-    checks if client is in CLIENTS (active websocket connection).
-    websocket - the websocket object the message is sent from.
-    data - content of the message, includes the payload (massage using internal message format) and JWT token for auth.
-    TODO - add ACK
-    """
-    token = data.get("token")
-    payload = data.get("payload", {})
-    sender = payload.get("sender")
-    address = payload.get("address")
-    message = payload.get("message")
-
-    # register the sender's websocket connection
-    if sender:
-        CLIENTS[sender] = websocket
-
-    # verify sender with auth
-    if not ( auth.validate_user_token(sender, token) or auth.validate_user_token(sender, address) ): #
-        await websocket.send(json.dumps({"error": "Auth failed"}))
-        return
-
-    # forward the internal message to the send() func.
-    print(f"Received message from: {sender} to: {address}")
-
-    if address in ROOMS:
-        # address is room, send to room_send()
-        await room_send(address, {
-            "sender": sender,
-            "address": address,
-            "message": message
-        })
-    elif address not in CLIENTS:
-        # address does not exist
-        await websocket.send(json.dumps({"error": f"Address {address} not found"}))
-    await send(address, {
-        "sender": sender,
-        "address": address,
-        "message": message
-    })
-    #logger.info(f"Return ack")
-    await websocket.send(json.dumps({"action": "ack", "payload": {"status": "success"}})) # TODO - add msg id
-
-
-async def heartbeat(websocket):
-    """
-    Heartbeat message is sent from websocket to address contained in payload.
-    websocket - the websocket object the message is sent from.
-    """
-    #logger.info(f"Heartbeat message received {websocket}")
-    asyncio.create_task(websocket.send(json.dumps({"action": "heartbeat"})))
-
-async def room_send(address, payload):
-    """
-    TODO - verify async works
-    Send message to room address contained in payload.
-    room address is a type of user that holds a list of user UIDs.
-    the function iterates through the list of user UIDs and sends the message to each user.
-
-    address - Address UID of the message.
-    payload - Payload of the message.
-    """
-    async with asyncio.TaskGroup() as room_addresses:
-        for user in ROOMS[address]:
-            # creates an async task room to send messages to each room member
-            room_addresses.create_task(send(user, payload))
-        await room_addresses.join() # awaits the completion of all tasks in the task group
-
-
-async def handler(websocket):
-    """
-    async handler.
-    """
-    try:
-        async for raw_message in websocket:
-            data = json.loads(raw_message)
-            action = data.get("action")
-
-            if action == "send":
-                await receive(websocket, data)
-
-            elif action == "heartbeat":
-                await heartbeat(websocket)
-
-            elif action == "login":
-                payload = data.get("payload", {})
-                username = payload.get("username")
-                password = payload.get("password", "123")
-                token = auth.login(username, password)
-                if not token:
-                    auth.signup(username, password)
-                    token = auth.login(username, password)
-                CLIENTS[username] = websocket
-                await websocket.send(json.dumps({"action": "login_response", "token": token}))
-
-
-
-    except websockets.ConnectionClosed:
-        pass
-    finally:
-        # Remove disconnected socket
-        for user, ws in list(CLIENTS.items()):
-            if ws == websocket:
-                del CLIENTS[user]
-
 
 
 async def manage_room(websocket, room_id, uid, token):
@@ -154,18 +34,102 @@ async def manage_room(websocket, room_id, uid, token):
     uid - user ID of the one making the request.
     token - JWT token for auth.
     """
-    if not auth.validate_user_token(uid):
+    if not auth.validate_user_token(uid, token):
+        logger.warning(f"Auth failed for manage_room request by user: {uid}")
         await websocket.send(json.dumps({"error": "Auth failed"}))
-    if room_id not in ROOMS:
-        # create room if
-        ROOMS[room_id] = []
-    ROOMS[room_id].append(uid)
-    await websocket.send(json.dumps({"action": "room_response", "payload": {"status": "success"}})) #return ack
+        return
+
+    if room_id not in state.ROOMS:
+        state.ROOMS[room_id] = []
+        logger.info(f"Created new room: {room_id}")
+
+    if uid not in state.ROOMS[room_id]:
+        state.ROOMS[room_id].append(uid)
+        logger.info(f"Added user '{uid}' to room '{room_id}'")
+
+    await websocket.send(json.dumps({"action": "room_response", "payload": {"status": "success"}}))
+
+
+async def handler(websocket):
+    """
+    Main WebSocket connection handler.
+    Dispatches incoming messages to the corresponding modular handlers.
+    """
+    try:
+        async for raw_message in websocket:
+            try:
+                data = json.loads(raw_message)
+            except json.JSONDecodeError:
+                logger.error("Received invalid JSON from client")
+                await websocket.send(json.dumps({"error": "Invalid JSON format"}))
+                continue
+
+            action = data.get("action")
+            logger.debug(f"Handling action: {action}")
+
+            if action == "send":
+                await messaging.receive(websocket, data)
+
+            elif action == "heartbeat":
+                await heartbeat.heartbeat(websocket)
+
+            elif action == "login":
+                payload = data.get("payload", {})
+                username = payload.get("username")
+                password = payload.get("password", "123")
+
+                token = auth.login(username, password)
+                if not token:
+                    auth.signup(username, password)
+                    token = auth.login(username, password)
+
+                if token:
+                    state.CLIENTS[username] = {
+                        "websocket": websocket,
+                        "last_heartbeat": asyncio.get_event_loop().time()
+                    }
+                    logger.info(f"User '{username}' logged in successfully")
+                    await websocket.send(json.dumps({"action": "login_response", "token": token}))
+                else:
+                    logger.warning(f"Login failed for user '{username}'")
+                    await websocket.send(json.dumps({"error": "Login failed"}))
+
+            elif action == "manage_room":
+                payload = data.get("payload", {})
+                room_id = payload.get("room_id")
+                uid = payload.get("username") or payload.get("uid")
+                token = data.get("token")
+                await manage_room(websocket, room_id, uid, token)
+
+            else:
+                logger.warning(f"Received unknown action: {action}")
+                await websocket.send(json.dumps({"error": f"Unknown action: {action}"}))
+
+    except websockets.ConnectionClosed:
+        logger.info("Client connection closed")
+    except Exception as e:
+        logger.error(f"Unexpected error in handler: {e}", exc_info=True)
+    finally:
+        # Remove disconnected socket from CLIENTS
+        disconnected_users = []
+        for user, client_info in list(state.CLIENTS.items()):
+            if client_info.get("websocket") == websocket:
+                disconnected_users.append(user)
+                del state.CLIENTS[user]
+
+        if disconnected_users:
+            logger.info(f"Removed disconnected user session(s): {disconnected_users}")
+
 
 async def main():
-    #logging.basicConfig(filename="server.log", format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG) TODO - change logging method
+    logger.info("Starting Chat Server...")
+
+    # Start background cleanup task for stale connections
+    asyncio.create_task(heartbeat.remove_inactive_clients())
+    logger.info("Inactive clients cleanup worker started")
+
     async with websockets.serve(handler, "0.0.0.0", 9000):
-        print("Server running on ws://0.0.0.0:9000")
+        logger.info("Server running on ws://0.0.0.0:9000")
         await asyncio.Future()
 
 
