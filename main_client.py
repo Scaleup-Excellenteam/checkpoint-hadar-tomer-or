@@ -89,6 +89,11 @@ def create_or_enter_room():
     if not room:
         print("Room name cannot be empty.")
         return
+
+    if not client.join_room(room):
+        print(f"Could not join room '{room}'.")
+        return
+
     enter_room(room)
 
 
