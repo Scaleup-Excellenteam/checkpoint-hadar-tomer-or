@@ -2,6 +2,7 @@
 
 import importlib
 import sqlite3
+import ssl
 import sys
 from pathlib import Path
 
@@ -52,3 +53,40 @@ def auth_manager_factory(monkeypatch, tmp_path):
             manager.db.close()
         except sqlite3.Error:
             pass
+
+
+@pytest.fixture
+def isolated_server_module(monkeypatch, tmp_path):
+    """Import the server handler with its database and TLS setup isolated."""
+    monkeypatch.chdir(tmp_path)
+
+    import logger
+
+    class InertSSLContext:
+        def __init__(self, protocol):
+            self.protocol = protocol
+
+        def load_cert_chain(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(ssl, "SSLContext", InertSSLContext)
+    monkeypatch.setattr(logger, "setup_logger", lambda role: None)
+
+    for module_name in tuple(sys.modules):
+        if module_name == "Server" or module_name.startswith("Server."):
+            del sys.modules[module_name]
+
+    module = importlib.import_module("Server.Server")
+    module.state.CLIENTS.clear()
+    module.state.ROOMS.clear()
+
+    try:
+        yield module
+    finally:
+        module.state.CLIENTS.clear()
+        module.state.ROOMS.clear()
+        module.state.auth.db.close()
+
+        for module_name in tuple(sys.modules):
+            if module_name == "Server" or module_name.startswith("Server."):
+                del sys.modules[module_name]
