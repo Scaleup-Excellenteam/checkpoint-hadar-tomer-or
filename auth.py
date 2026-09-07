@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from hashlib import new
 import sqlite3
@@ -16,8 +17,9 @@ class User:
 
 
 class AuthManager:
-    def __init__(self):
-        self.db = sqlite3.connect("users.db", check_same_thread=False)
+    def __init__(self, db_path: str = os.path.join("DB", "users.db")):
+        os.makedirs(os.path.dirname(db_path) or "DB", exist_ok=True)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         # reputation persists with user
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS users (

@@ -1,3 +1,4 @@
+import os
 import logging
 
 """
@@ -15,11 +16,13 @@ logger.debug("debug: User %s joined room %s", username, room)
 """      
 
 def setup_logger(role: str):
+    os.makedirs("Log", exist_ok=True)
+    log_file = os.path.join("Log", f"app_{role.lower()}.log")
     logging.basicConfig(
         level=logging.INFO,
         format=f"%(asctime)s | {role} | %(levelname)s | %(name)s | %(message)s",
         handlers=[
             logging.StreamHandler(),          # console
-            logging.FileHandler(f"app_{role.lower()}.log")    # file
+            logging.FileHandler(log_file)     # file
         ]
     )
