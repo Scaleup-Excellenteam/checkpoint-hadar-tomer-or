@@ -1,4 +1,5 @@
 import json
+import time
 from collections import deque
 
 import pytest
@@ -7,11 +8,12 @@ import pytest
 class FakeWebSocket:
     """The minimal async transport surface used by ``Server.Server.handler``."""
 
-    def __init__(self, messages, on_send=None):
+    def __init__(self, messages, on_send=None, remote_address=("127.0.0.1", 12345)):
         self._messages = iter(messages)
         self._on_send = on_send
         self.sent = []
         self.close_called = False
+        self.remote_address = remote_address
 
     def __aiter__(self):
         return self
@@ -99,7 +101,8 @@ async def test_login_registers_the_socket_before_responding_and_cleans_up_on_exi
     assert response["action"] == "login_response"
     assert server.state.auth.validate_user_token("alice", response["token"]) is True
     assert registration_during_response["alice"][0] is socket
-    assert registration_during_response["alice"][1:] == ([], deque())
+    assert registration_during_response["alice"][1:3] == ([], deque())
+    assert isinstance(registration_during_response["alice"][3], (int, float))
     assert server.state.CLIENTS == {}
 
 
@@ -123,10 +126,6 @@ async def test_login_failure_returns_the_current_error_without_registering_socke
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-SERVER-001: handler registers the untrimmed login username as the connection key",
-)
 async def test_login_registers_the_normalized_username(isolated_server_module):
     server = isolated_server_module
     assert server.state.auth.signup("alice", "pw") is True
@@ -169,7 +168,7 @@ async def test_logout_revokes_a_valid_token_closes_socket_and_cleans_connection(
     assert server.state.auth.signup("alice", "pw") is True
     token = server.state.auth.login("alice", "pw")
     socket = FakeWebSocket([json.dumps({"action": "logout", "token": token})])
-    server.state.CLIENTS["alice"] = (socket, [], deque())
+    server.state.CLIENTS["alice"] = (socket, [], deque(), time.monotonic())
 
     await server.handler(socket)
 
@@ -186,7 +185,7 @@ async def test_logout_with_invalid_token_still_acknowledges_closes_and_cleans_co
 ):
     server = isolated_server_module
     socket = FakeWebSocket([json.dumps({"action": "logout", "token": "already-revoked"})])
-    server.state.CLIENTS["alice"] = (socket, [], deque())
+    server.state.CLIENTS["alice"] = (socket, [], deque(), time.monotonic())
 
     await server.handler(socket)
 
@@ -239,10 +238,6 @@ async def test_missing_username_in_account_requests_uses_the_current_failure_res
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-SERVER-002: signup silently substitutes a default password when one is omitted",
-)
 async def test_signup_rejects_a_request_without_password(isolated_server_module):
     server = isolated_server_module
     socket = FakeWebSocket([json.dumps({"action": "signup", "payload": {"username": "alice"}})])

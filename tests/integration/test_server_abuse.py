@@ -1,5 +1,6 @@
 """Deterministic rate-limit and authentication-boundary coverage."""
 
+import time
 from collections import deque
 
 import pytest
@@ -18,7 +19,7 @@ class FakeClock:
 
 
 def register_self(server, username, socket):
-    server.state.CLIENTS[username] = (socket, [], deque())
+    server.state.CLIENTS[username] = (socket, [], deque(), time.monotonic())
 
 
 @pytest.mark.asyncio
@@ -93,7 +94,7 @@ async def test_authenticated_missing_destinations_consume_rate_limit_budget(
     register_self(server, "alice", socket)
     clock = FakeClock(100.0)
     monkeypatch.setattr(server.messaging.time, "monotonic", clock)
-    server.state.CLIENTS["alice"] = (socket, [], deque([100.0] * (server.state.MAX_MESSAGES - 1)))
+    server.state.CLIENTS["alice"] = (socket, [], deque([100.0] * (server.state.MAX_MESSAGES - 1)), time.monotonic())
 
     await server.messaging.receive(socket, message_frame("alice", address, "missing", token))
 
@@ -112,8 +113,8 @@ async def test_authenticated_delivery_failure_consumes_rate_limit_budget(isolate
     clock = FakeClock(100.0)
     monkeypatch.setattr(server.messaging.time, "monotonic", clock)
     server.state.CLIENTS.update({
-        "alice": (sender_socket, [], deque([100.0] * (server.state.MAX_MESSAGES - 1))),
-        "bob": (failing_socket, [], deque()),
+        "alice": (sender_socket, [], deque([100.0] * (server.state.MAX_MESSAGES - 1)), time.monotonic()),
+        "bob": (failing_socket, [], deque(), time.monotonic()),
     })
 
     await server.messaging.receive(sender_socket, message_frame("alice", "bob", "fails", token))
@@ -144,7 +145,7 @@ async def test_invalid_authentication_neither_delivers_nor_consumes_budget(
 
     alice_socket, recipient_socket = FakeRecipientSocket(), FakeRecipientSocket()
     register_self(server, "alice", alice_socket)
-    server.state.CLIENTS["recipient"] = (recipient_socket, [], deque())
+    server.state.CLIENTS["recipient"] = (recipient_socket, [], deque(), time.monotonic())
     recipient_entry = server.state.CLIENTS["recipient"]
 
     await server.messaging.receive(alice_socket, message_frame("alice", "recipient", "blocked", token))
@@ -158,10 +159,6 @@ async def test_invalid_authentication_neither_delivers_nor_consumes_budget(
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-SERVER-005: receive replaces an existing connection mapping before authentication fails",
-)
 async def test_rejected_authentication_does_not_replace_a_victim_connection_mapping(isolated_server_module):
     server = isolated_server_module
     victim_socket, attacker_socket, recipient_socket = (
@@ -170,8 +167,8 @@ async def test_rejected_authentication_does_not_replace_a_victim_connection_mapp
         FakeRecipientSocket(),
     )
     server.state.CLIENTS.update({
-        "victim": (victim_socket, ["lobby"], deque([12.0])),
-        "recipient": (recipient_socket, [], deque()),
+        "victim": (victim_socket, ["lobby"], deque([12.0]), time.monotonic()),
+        "recipient": (recipient_socket, [], deque(), time.monotonic()),
     })
     original_victim_entry = server.state.CLIENTS["victim"]
 
@@ -185,15 +182,12 @@ async def test_rejected_authentication_does_not_replace_a_victim_connection_mapp
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-SERVER-006: receive accepts the destination address as an alternative authentication token",
-)
 async def test_receive_requires_the_designated_token_field_not_a_token_in_address(isolated_server_module):
     server = isolated_server_module
     alice_token = authenticated_user(server, "alice")
     sender_socket, recipient_socket = FakeRecipientSocket(), FakeRecipientSocket()
-    server.state.CLIENTS[alice_token] = (recipient_socket, [], deque())
+    register_self(server, "alice", sender_socket)
+    server.state.CLIENTS[alice_token] = (recipient_socket, [], deque(), time.monotonic())
 
     await server.messaging.receive(sender_socket, message_frame("alice", alice_token, "forged", "invalid"))
 

@@ -1,6 +1,7 @@
 """In-process coverage for server message routing and room delivery."""
 
 import json
+import time
 from collections import deque
 
 import pytest
@@ -9,10 +10,11 @@ import pytest
 class FakeRecipientSocket:
     """Minimal socket that records JSON frames and can fail delivery."""
 
-    def __init__(self, *, fail_send=False):
+    def __init__(self, *, fail_send=False, remote_address=("127.0.0.1", 12345)):
         self.fail_send = fail_send
         self.sent = []
         self.send_attempts = 0
+        self.remote_address = remote_address
 
     async def send(self, message):
         self.send_attempts += 1
@@ -65,8 +67,8 @@ async def test_receive_delivers_direct_message_and_acknowledges_sender(isolated_
     token = authenticated_user(server, "alice")
     sender_socket = FakeRecipientSocket()
     recipient_socket = FakeRecipientSocket()
-    server.state.CLIENTS["alice"] = (sender_socket, [], deque())
-    server.state.CLIENTS["bob"] = (recipient_socket, [], deque())
+    server.state.CLIENTS["alice"] = (sender_socket, [], deque(), time.monotonic())
+    server.state.CLIENTS["bob"] = (recipient_socket, [], deque(), time.monotonic())
 
     await server.messaging.receive(sender_socket, message_frame("alice", "bob", message, token))
 
@@ -80,7 +82,7 @@ async def test_receive_reports_an_absent_direct_recipient(isolated_server_module
     server = isolated_server_module
     token = authenticated_user(server, "alice")
     sender_socket = FakeRecipientSocket()
-    server.state.CLIENTS["alice"] = (sender_socket, [], deque())
+    server.state.CLIENTS["alice"] = (sender_socket, [], deque(), time.monotonic())
 
     await server.messaging.receive(sender_socket, message_frame("alice", "nobody", "hello", token))
 
@@ -94,7 +96,10 @@ async def test_receive_reports_a_recipient_socket_delivery_failure(isolated_serv
     token = authenticated_user(server, "alice")
     sender_socket = FakeRecipientSocket()
     recipient_socket = FakeRecipientSocket(fail_send=True)
-    server.state.CLIENTS.update({"alice": (sender_socket, [], deque()), "bob": (recipient_socket, [], deque())})
+    server.state.CLIENTS.update({
+        "alice": (sender_socket, [], deque(), time.monotonic()),
+        "bob": (recipient_socket, [], deque(), time.monotonic()),
+    })
 
     await server.messaging.receive(sender_socket, message_frame("alice", "bob", "hello", token))
 
@@ -108,7 +113,7 @@ async def test_receive_supports_direct_messages_to_the_sender(isolated_server_mo
     server = isolated_server_module
     token = authenticated_user(server, "alice")
     sender_socket = FakeRecipientSocket()
-    server.state.CLIENTS["alice"] = (sender_socket, [], deque())
+    server.state.CLIENTS["alice"] = (sender_socket, [], deque(), time.monotonic())
 
     await server.messaging.receive(sender_socket, message_frame("alice", "alice", "note", token))
 
@@ -123,7 +128,7 @@ async def test_receive_supports_direct_messages_to_the_sender(isolated_server_mo
 async def test_join_room_creates_membership_once_in_both_state_registries(isolated_server_module):
     server = isolated_server_module
     socket = FakeHandlerSocket([])
-    server.state.CLIENTS["alice"] = (socket, [], deque())
+    server.state.CLIENTS["alice"] = (socket, [], deque(), time.monotonic())
 
     await server.manage_room(socket, "lobby", "alice")
     await server.manage_room(socket, "lobby", "alice")
@@ -146,7 +151,7 @@ async def test_join_room_handler_path_exposes_membership_before_disconnect_clean
     socket = FakeHandlerSocket(
         [json.dumps({"action": "join_room", "room_id": "lobby", "uid": "alice"})], on_send=capture_membership
     )
-    server.state.CLIENTS["alice"] = (socket, [], deque())
+    server.state.CLIENTS["alice"] = (socket, [], deque(), time.monotonic())
 
     await server.handler(socket)
 
@@ -162,8 +167,9 @@ async def test_room_message_fans_out_to_other_members_and_acknowledges_sender(is
     token = authenticated_user(server, "alice")
     sender_socket, bob_socket, carol_socket = FakeRecipientSocket(), FakeRecipientSocket(), FakeRecipientSocket()
     server.state.CLIENTS.update({
-        "alice": (sender_socket, ["lobby"], deque()), "bob": (bob_socket, ["lobby"], deque()),
-        "carol": (carol_socket, ["lobby"], deque()),
+        "alice": (sender_socket, ["lobby"], deque(), time.monotonic()),
+        "bob": (bob_socket, ["lobby"], deque(), time.monotonic()),
+        "carol": (carol_socket, ["lobby"], deque(), time.monotonic()),
     })
     server.state.ROOMS["lobby"] = ["alice", "bob", "carol"]
 
@@ -182,7 +188,7 @@ async def test_room_message_to_empty_or_sender_only_room_reports_failure(isolate
     server = isolated_server_module
     token = authenticated_user(server, "alice")
     sender_socket = FakeRecipientSocket()
-    server.state.CLIENTS["alice"] = (sender_socket, ["lobby"], deque())
+    server.state.CLIENTS["alice"] = (sender_socket, ["lobby"], deque(), time.monotonic())
     server.state.ROOMS["lobby"] = members
 
     await server.messaging.receive(sender_socket, message_frame("alice", "lobby", "hello", token))
@@ -198,8 +204,10 @@ async def test_room_delivery_attempts_other_members_despite_a_partial_failure(is
     sender_socket, successful_socket = FakeRecipientSocket(), FakeRecipientSocket()
     failing_socket, other_successful_socket = FakeRecipientSocket(fail_send=True), FakeRecipientSocket()
     server.state.CLIENTS.update({
-        "alice": (sender_socket, ["lobby"], deque()), "user_a": (successful_socket, ["lobby"], deque()),
-        "user_b": (failing_socket, ["lobby"], deque()), "user_c": (other_successful_socket, ["lobby"], deque()),
+        "alice": (sender_socket, ["lobby"], deque(), time.monotonic()),
+        "user_a": (successful_socket, ["lobby"], deque(), time.monotonic()),
+        "user_b": (failing_socket, ["lobby"], deque(), time.monotonic()),
+        "user_c": (other_successful_socket, ["lobby"], deque(), time.monotonic()),
     })
     server.state.ROOMS["lobby"] = ["alice", "user_a", "user_b", "user_c"]
 
@@ -218,8 +226,9 @@ async def test_address_collision_routes_to_room_before_same_named_user(isolated_
     token = authenticated_user(server, "alice")
     sender_socket, same_named_user_socket, room_member_socket = FakeRecipientSocket(), FakeRecipientSocket(), FakeRecipientSocket()
     server.state.CLIENTS.update({
-        "alice": (sender_socket, [], deque()), "target": (same_named_user_socket, [], deque()),
-        "room_member": (room_member_socket, [], deque()),
+        "alice": (sender_socket, [], deque(), time.monotonic()),
+        "target": (same_named_user_socket, [], deque(), time.monotonic()),
+        "room_member": (room_member_socket, [], deque(), time.monotonic()),
     })
     server.state.ROOMS["target"] = ["room_member"]
 
@@ -233,12 +242,14 @@ async def test_address_collision_routes_to_room_before_same_named_user(isolated_
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(strict=True, reason="BUG-SERVER-003: receive permits a sender claim over another user's registered socket")
 async def test_receive_rejects_sender_claim_from_a_different_registered_socket(isolated_server_module):
     server = isolated_server_module
     alice_token = authenticated_user(server, "alice")
     bob_socket, recipient_socket = FakeRecipientSocket(), FakeRecipientSocket()
-    server.state.CLIENTS.update({"bob": (bob_socket, [], deque()), "recipient": (recipient_socket, [], deque())})
+    server.state.CLIENTS.update({
+        "bob": (bob_socket, [], deque(), time.monotonic()),
+        "recipient": (recipient_socket, [], deque(), time.monotonic()),
+    })
 
     await server.messaging.receive(bob_socket, message_frame("alice", "recipient", "forged", alice_token))
 
@@ -248,14 +259,13 @@ async def test_receive_rejects_sender_claim_from_a_different_registered_socket(i
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.xfail(strict=True, reason="BUG-SERVER-004: manage_room dispatch passes four arguments to a three-argument handler")
 async def test_manage_room_action_joins_and_acknowledges_through_handler_dispatch(isolated_server_module):
     server = isolated_server_module
     token = authenticated_user(server, "alice")
     socket = FakeHandlerSocket([json.dumps({
         "action": "manage_room", "token": token, "payload": {"room_id": "lobby", "username": "alice"},
     })])
-    server.state.CLIENTS["alice"] = (socket, [], deque())
+    server.state.CLIENTS["alice"] = (socket, [], deque(), time.monotonic())
 
     await server.handler(socket)
 
