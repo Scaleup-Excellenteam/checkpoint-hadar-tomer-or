@@ -119,11 +119,15 @@ async def handler(websocket):
                 await manage_room(websocket, data["room_id"], data["uid"])
 
             elif action == "login":
-                payload = data.get("payload", {})
-                username = payload.get("username").strip()
-                password = payload.get("password")
-
-                token = state.auth.login(username, password)
+                payload = data.get("payload") or {}
+                token = None
+                username = None
+                try:
+                    username = payload.get("username").strip()
+                    password = payload.get("password")
+                    token = state.auth.login(username, password)
+                except (AttributeError, TypeError):
+                    pass
 
                 if token:
                     state.CLIENTS[username] = (websocket, [], deque(), time.monotonic())
@@ -138,11 +142,16 @@ async def handler(websocket):
                     await websocket.send(json.dumps({"error": "Login failed"}))
 
             elif action == "signup":
-                payload = data.get("payload", {})
-                username = payload.get("username").strip()
-                password = payload.get("password")
-                success = state.auth.signup(username, password)
-                print(username," ", password)
+                payload = data.get("payload") or {}
+                success = False
+                username = None
+                try:
+                    username = payload.get("username").strip()
+                    password = payload.get("password")
+                    success = state.auth.signup(username, password)
+                except (AttributeError, TypeError):
+                    pass
+
                 if not success:
                     logger.warning(f"Signup failed: username '{username}' is already taken")
                     await websocket.send(json.dumps({"error": "Username already taken"}))
