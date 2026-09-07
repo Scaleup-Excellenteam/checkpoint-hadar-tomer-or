@@ -1,4 +1,5 @@
 import os
+import json
 import aiohttp
 import logging
 import ipaddress
@@ -29,26 +30,26 @@ async def check_ip_rep(ip: str):
 
     if not VIRUSTOTAL_API_KEY:
         logger.warning("Virus Total API key not set")
-        return (-200, "No API Key")
+        return (0, "No API Key")
 
     headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-    url = VT_IP_URL.format(ip=ip)
+    url = VTOTAL_IP_URL.format(ip=ip)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     stats = data.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
-                    reputation_result = data.get("data", {}).get("attributes", {}).get("reputation", {})
+                    reputation_result = data.get("data", {}).get("attributes", {}).get("reputation", 0)
                     result = (reputation_result, json.dumps(stats))
                     reputation_cache[ip] = result
                     return result
                 elif resp.status == 404:
-                    return True, "CLEAN", "Address not found in VirusTotal database"
+                    return (0, "Address not found in VirusTotal database")
                 else:
                     logger.error(f"VirusTotal error {resp.status}: {await resp.text()}")
-                    return True, "ERROR", f"VT API returned status {resp.status}"
+                    return (0, f"VT API returned status {resp.status}")
     except Exception as e:
         logger.error(f"Error querying VirusTotal: {e}")
-        return True, "ERROR", str(e)
+        return (0, f"error {str(e)}")
 
