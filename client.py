@@ -1,7 +1,8 @@
+import ssl
 import json
+import queue
 import sqlite3
 import threading
-import queue
 import logging
 from datetime import datetime, timezone
 from websockets.sync.client import connect
@@ -14,11 +15,12 @@ logger = logging.getLogger(__name__)
 
 class ChatClient:
     def __init__(self, host="127.0.0.1", port=9000, history_db=None):
-
+        ssl_context = ssl.create_default_context(cafile="cert.pem")
+        ssl_context.check_hostname = False
         if host.startswith("ws://") or host.startswith("wss://"):
             self.uri = host
         else:
-            self.uri = f"ws://{host}:{port}"
+            self.uri = f"wss://{host}:{port}"
 
         self.username = None
         self.token = None
@@ -34,8 +36,7 @@ class ChatClient:
         self._message_handler = None
 
         # Connect to server
-        self.socket = connect(self.uri)
-        logger.info("Connected to server at %s", self.uri)
+        self.socket = connect(self.uri, ssl=ssl_context)
 
         # Start listening for incoming messages
         self._listener_thread = threading.Thread(
@@ -43,11 +44,8 @@ class ChatClient:
             daemon=True
         )
         self._listener_thread.start()
-        logger.debug("Listener thread started")
 
     def signup(self, username, password):
-        logger.debug("Signing up user '%s'", username)
-
         request = {
             "action": "signup",
             "payload": {
@@ -61,20 +59,15 @@ class ChatClient:
         try:
             response = self._control_queue.get(timeout=5)
         except queue.Empty:
-            logger.warning("Signup timed out for user '%s'", username)
             return False
 
         if response.get("action") == "signup_response":
-            logger.info("Signup successful for user '%s'", username)
             return True
 
-        logger.warning("Signup failed for user '%s': %s", username, response)
         return False
 
 
     def login(self, username, password):
-        logger.debug("Logging in user '%s'", username)
-
         request = {
             "action": "login",
             "payload": {
@@ -88,21 +81,17 @@ class ChatClient:
         try:
             response = self._control_queue.get(timeout=5)
         except queue.Empty:
-            logger.warning("Login timed out for user '%s'", username)
             return False
 
         token = response.get("token")
 
         if not token:
-            logger.warning("Login failed for user '%s': %s", username, response)
             return False
 
         self.username = username
         self.token = token
 
         self._open_history_db()
-
-        logger.info("User '%s' logged in successfully", username)
 
         return True
 
@@ -111,9 +100,6 @@ class ChatClient:
 
         if not self.token:
             return False
-
-        username = self.username
-        logger.debug("Logging out user '%s'", username)
 
         request = {
             "action": "logout",
@@ -125,11 +111,9 @@ class ChatClient:
         try:
             response = self._control_queue.get(timeout=5)
         except queue.Empty:
-            logger.warning("Logout timed out for user '%s'", username)
             return False
 
         if response.get("action") != "logout_response":
-            logger.warning("Logout failed for user '%s': %s", username, response)
             return False
 
         self.token = None
@@ -139,8 +123,6 @@ class ChatClient:
         if self.history_db:
             self.history_db.close()
             self.history_db = None
-
-        logger.info("User '%s' logged out", username)
 
         return True
 
@@ -192,24 +174,18 @@ class ChatClient:
             message
         )
 
-        logger.debug("Message sent to '%s': %s", target_address, message)
-
         return True
 
     def heartbeat(self):
-        logger.debug("Sending heartbeat")
 
         self._send({
             "action": "heartbeat"
         })
 
         try:
-            response = self._control_queue.get(timeout=5)
-            logger.debug("Heartbeat response: %s", response)
-            return response
+            return self._control_queue.get(timeout=5)
 
         except queue.Empty:
-            logger.warning("Heartbeat timed out")
             return None
 
     def _open_history_db(self):
@@ -297,7 +273,6 @@ class ChatClient:
             data = self._raw_recv()
 
             if data is None:
-                logger.debug("Listener loop exiting: connection closed")
                 break
 
             action = data.get("action")
@@ -323,8 +298,6 @@ class ChatClient:
                     message
                 )
 
-                logger.info("Message received from '%s' in '%s'", sender, chat_id)
-
                 if self._message_handler:
                     self._message_handler(
                         chat_id,
@@ -334,7 +307,6 @@ class ChatClient:
 
             # Login / signup / logout / heartbeat responses
             else:
-                logger.debug("Control response received: %s", data)
                 self._control_queue.put(data)
 
     def _raw_recv(self):
@@ -348,7 +320,6 @@ class ChatClient:
             return json.loads(data)
 
         except Exception:
-            logger.debug("Failed to receive/parse message", exc_info=True)
             return None
 
     def _send(self, data):
@@ -358,7 +329,6 @@ class ChatClient:
         self.socket.send(message)
 
     def close(self):
-        logger.info("Closing connection for user '%s'", self.username)
 
         self.socket.close()
 

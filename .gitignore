@@ -54,6 +54,9 @@ Thumbs.db
 *.temp
 *.swp
 *~
+*.db
+*.log
+*.pem
 
 # Jupyter
 .ipynb_checkpoints/
