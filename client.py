@@ -1,3 +1,4 @@
+import os
 import ssl
 import json
 import queue
@@ -254,8 +255,9 @@ class ChatClient:
 
         db_path = (
             self.history_db_path
-            or f"chat_history_{self.username}.db"
+            or os.path.join("DB", f"chat_history_{self.username}.db")
         )
+        os.makedirs(os.path.dirname(db_path) or "DB", exist_ok=True)
 
         self.history_db = sqlite3.connect(
             db_path,

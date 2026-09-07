@@ -2,6 +2,7 @@ import os
 import ssl
 import sys
 import json
+import time
 import asyncio
 import logging
 import websockets
@@ -15,6 +16,7 @@ from logger import setup_logger
 from collections import deque
 import Server.state as state
 import Server.messaging as messaging
+import Server.reputation as reputation
 
 # create ssl context for secure connection
 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -50,7 +52,7 @@ async def manage_room(websocket, room_id, uid):
         logger.info(f"Added user '{uid}' to room '{room_id}'")
 
     if uid in state.CLIENTS:
-        user_socket, user_rooms, user_msg = state.CLIENTS[uid]
+        user_socket, user_rooms, *user_rest = state.CLIENTS[uid]
         if room_id not in user_rooms:
             user_rooms.append(room_id)
 
@@ -62,6 +64,19 @@ async def handler(websocket):
     Main WebSocket connection handler.
     Dispatches incoming messages to the corresponding modular handlers.
     """
+    client_ip = websocket.remote_address[0]
+
+    #run an ip check on client
+    reputation_score, rep_stats = await reputation.check_ip_rep(client_ip)
+    #TODO - tune threshold according to api
+    logger.info(f"IP: {client_ip} | Reputation score: {reputation_score} | Stats: {rep_stats}")
+    if reputation_score < state.REPUTATION_THRESHOLD:
+        #if reputation under threshold, deny connection and close
+        logger.warning(f"Reputation threshold exceeded: {state.REPUTATION_THRESHOLD}, closing connection with: {client_ip}")
+        await websocket.send(json.dumps({"error": "Connection closed due to low reputation score"}))
+        await websocket.close()
+        return
+
     try:
         async for raw_message in websocket:
             try:
@@ -82,6 +97,24 @@ async def handler(websocket):
                 logger.info(f"Heartbeat message received {websocket}")
                 await websocket.send(json.dumps({"action": "heartbeat"}))
 
+                # Idle reputation regrow for connected user
+                now = time.monotonic()
+                for user, client_data in list(state.CLIENTS.items()):
+                    if client_data[0] == websocket and len(client_data) > 3:
+                        ws, rooms, msg_deque, last_clean = client_data
+                        if now - last_clean >= state.REGROW_WINDOW_SECONDS:
+                            current_rep = state.auth.get_reputation_by_username(user)
+                            if current_rep < state.MAX_REPUTATION:
+                                state.auth.update_reputation_by_username(
+                                    user, state.REGROW_STEP, state.MIN_REPUTATION, state.MAX_REPUTATION
+                                )
+                                new_rep = state.auth.get_reputation_by_username(user)
+                                logger.info(
+                                    f"[REPUTATION_REGROW] User '{user}' regrew by +{state.REGROW_STEP} to {new_rep} "
+                                )
+                            state.CLIENTS[user] = (ws, rooms, msg_deq, now)
+                        break
+
             elif action == "join_room":
                 await manage_room(websocket, data["room_id"], data["uid"])
 
@@ -93,9 +126,13 @@ async def handler(websocket):
                 token = state.auth.login(username, password)
 
                 if token:
-                    state.CLIENTS[username] = (websocket, [], deque())
+                    state.CLIENTS[username] = (websocket, [], deque(), time.monotonic())
                     logger.info(f"User '{username}' logged in successfully")
                     await websocket.send(json.dumps({"action": "login_response", "token": token}))
+                    if reputation_score < -5:
+                        # if reputation is bad but not under block threshold, user starts with lower rep score
+                        state.auth.update_reputation(token, state.SUSPICIOUS_IP_HIT, state.MIN_REPUTATION, state.MAX_REPUTATION)
+                        logger.info(f"User '{username}' connected from low reputation ip:{client_ip}")
                 else:
                     logger.warning(f"Login failed for user '{username}'")
                     await websocket.send(json.dumps({"error": "Login failed"}))
@@ -111,7 +148,7 @@ async def handler(websocket):
                     await websocket.send(json.dumps({"error": "Username already taken"}))
                 else:
                     token = state.auth.login(username, password)
-                    #state.CLIENTS[username] = (websocket, []) TODO - check if needed.
+                    state.CLIENTS[username] = (websocket, [], deque(), time.monotonic())
                     logger.info(f"User '{username}' signed up successfully")
                     await websocket.send(json.dumps({"action": "signup_response", "token": token}))
 
@@ -141,7 +178,7 @@ async def handler(websocket):
     finally:
         # Remove disconnected socket from CLIENTS
         disconnected_users = []
-        for user, (w_sockets,user_rooms, user_msg) in list(state.CLIENTS.items()):
+        for user, (w_sockets, user_rooms, *user_rest) in list(state.CLIENTS.items()):
             if w_sockets == websocket:
                 for room_id in user_rooms:
                     #lock rooms and remove user

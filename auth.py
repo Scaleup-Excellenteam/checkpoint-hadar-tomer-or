@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from hashlib import new
 import sqlite3
@@ -16,8 +17,9 @@ class User:
 
 
 class AuthManager:
-    def __init__(self):
-        self.db = sqlite3.connect("users.db", check_same_thread=False)
+    def __init__(self, db_path: str = os.path.join("DB", "users.db")):
+        os.makedirs(os.path.dirname(db_path) or "DB", exist_ok=True)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         # reputation persists with user
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -158,15 +160,34 @@ class AuthManager:
 
 
 
-    def update_reputation(self, token: str, rep_change: int):
+    def update_reputation(self, token: str, rep_change: int, min_rep: int = -25, max_rep: int = 5):
         """
         This function updates the reputation of a user connected to the given token, by rep_change points.
-        token - the JWT connected to the user
-        rep_change - the reputation of the user connected to the given token, positive or negative.
+        Clamps the reputation score within [min_rep, max_rep].
         """
         if token not in self.sessions:
             return False
         username = self.sessions[token]
-        self.db.execute("UPDATE users SET reputation = reputation + ? WHERE username = ?",(rep_change,username))
+        return self.update_reputation_by_username(username, rep_change, min_rep, max_rep)
+
+    def get_reputation_by_username(self, username: str) -> int:
+        """
+        Returns reputation for a given username directly.
+        """
+        if not username:
+            return -200
+        row = self.db.execute("SELECT reputation FROM users WHERE username = ?", (username,)).fetchone()
+        return row[0] if row else -200
+
+    def update_reputation_by_username(self, username: str, rep_change: int, min_rep: int = -25, max_rep: int = 5):
+        """
+        Updates reputation of a user directly by username, clamped within [min_rep, max_rep].
+        """
+        if not username:
+            return False
+        self.db.execute(
+            "UPDATE users SET reputation = MAX(?, MIN(?, reputation + ?)) WHERE username = ?",
+            (min_rep, max_rep, rep_change, username)
+        )
         self.db.commit()
         return True
