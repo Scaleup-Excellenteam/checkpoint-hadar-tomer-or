@@ -95,17 +95,23 @@ async def receive(websocket, data):
     address = payload.get("address")
     message = payload.get("message")
 
+    # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
+    if not (state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address)):
+        await websocket.send(json.dumps({"error": "Auth failed"}))
+        return
+
+
     # register the sender's websocket connection
     if sender:
+        if sender not in state.CLIENTS or state.CLIENTS[sender][0] is not websocket:
+            await websocket.send(json.dumps({"error": "Sender/socket identity mismatch"}))
+            return
         existing_rooms = state.CLIENTS[sender][1] if sender in state.CLIENTS else []
         existing_deque = state.CLIENTS[sender][2] if sender in state.CLIENTS else deque()
         existing_clean = state.CLIENTS[sender][3] if (sender in state.CLIENTS and len(state.CLIENTS[sender]) > 3) else time.monotonic()
         state.CLIENTS[sender] = (websocket, existing_rooms, existing_deque, existing_clean)
 
-    # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
-    if not ( state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address) ): #
-        await websocket.send(json.dumps({"error": "Auth failed"}))
-        return
+
 
     now = time.monotonic()
     user_deque = state.CLIENTS[sender][2] #if sender in state.CLIENTS else [] TODO check if section is needed
