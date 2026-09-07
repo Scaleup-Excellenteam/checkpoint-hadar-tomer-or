@@ -69,7 +69,7 @@ async def handler(websocket):
                 continue
 
             action = data.get("action")
-            logger.debug(f"Handling action: {action}")
+            logger.info(f"Handling action: {action}")
 
             if action == "send":
                 await messaging.receive(websocket, data)
@@ -101,17 +101,23 @@ async def handler(websocket):
                 payload = data.get("payload", {})
                 username = payload.get("username")
                 password = payload.get("password", "123")
-                state.auth.signup(username, password)
-                token = state.auth.login(username, password)
-                state.CLIENTS[username] = (websocket,[])
-                await websocket.send(json.dumps({"action": "signup_response", "token": token}))
+                success = state.auth.signup(username, password)
+                print(username," ", password)
+                if not success:
+                    logger.warning(f"Signup failed: username '{username}' is already taken")
+                    await websocket.send(json.dumps({"error": "Username already taken"}))
+                else:
+                    token = state.auth.login(username, password)
+                    state.CLIENTS[username] = (websocket, [])
+                    logger.info(f"User '{username}' signed up successfully")
+                    await websocket.send(json.dumps({"action": "signup_response", "token": token}))
 
             elif action == "logout":
                 token = data.get("token")
                 if token:
                     state.auth.logout(token)
                 await websocket.send(json.dumps({"action": "logout_response", "status": "success"}))
-                await websocket.close
+                await websocket.close()
                 break
 
             elif action == "manage_room":
@@ -157,7 +163,7 @@ async def account_handler(websocket, path):
                 continue
 
             action = data.get("action")
-            logger.debug(f"Handling action: {action}")
+            logger.info(f"Handling action: {action}")
             if action == "login":
                 payload = data.get("payload", {})
                 username = payload.get("username")
