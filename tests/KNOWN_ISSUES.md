@@ -48,3 +48,24 @@
 - **Current behavior:** `receive` validates the address as an alternative token, delivers to that recipient, and returns a success acknowledgement despite the invalid designated token field.
 - **Desired behavior:** Only the designated `token` field may authenticate a request; destination data must never substitute for credentials.
 - **Affected test:** `tests/integration/test_server_abuse.py::test_receive_requires_the_designated_token_field_not_a_token_in_address`
+
+## BUG-CLIENT-001 — Stale acknowledgements are consumed as later control responses
+
+- **Reproduction:** Put a normal `{"action": "ack"}` send acknowledgement and then a `{"action": "heartbeat"}` response into `ChatClient._control_queue`, then call `heartbeat`.
+- **Current behavior:** `heartbeat` returns the stale acknowledgement because every control method takes the next FIFO packet without checking its action.
+- **Desired behavior:** A control operation must consume only its own response, leaving unrelated queued packets available for their appropriate consumer.
+- **Affected test:** `tests/unit/test_client_controls.py::test_heartbeat_does_not_consume_a_stale_send_acknowledgement`
+
+## BUG-CLIENT-002 — Login accepts unrelated token-bearing responses
+
+- **Reproduction:** Put `{"action": "signup_response", "token": "unrelated-token"}` into `ChatClient._control_queue`, then call `login`.
+- **Current behavior:** `login` treats any response containing a `token` as successful, stores it, and sets the requested username.
+- **Desired behavior:** Login must accept only the expected login response shape/action and reject unrelated token-bearing packets.
+- **Affected test:** `tests/unit/test_client_controls.py::test_login_rejects_an_unrelated_token_bearing_response`
+
+## BUG-CLIENT-003 — Message-handler exceptions terminate the listener
+
+- **Reproduction:** Configure a message handler that raises, then feed the listener two valid direct-message `receive` packets.
+- **Current behavior:** The first message is saved, then the callback exception escapes `_listen_loop`; the second packet is never received or saved.
+- **Desired behavior:** A callback failure must be isolated so the listener can continue processing subsequent incoming packets.
+- **Affected test:** `tests/unit/test_client_listener.py::test_callback_exception_does_not_stop_later_incoming_messages`
