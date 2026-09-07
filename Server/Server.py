@@ -139,8 +139,8 @@ async def handler(websocket):
 
             elif action == "signup":
                 payload = data.get("payload", {})
-                username = payload.get("username")
-                password = payload.get("password", "123")
+                username = payload.get("username").strip()
+                password = payload.get("password")
                 success = state.auth.signup(username, password)
                 print(username," ", password)
                 if not success:
