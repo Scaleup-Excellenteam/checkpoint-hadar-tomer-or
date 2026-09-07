@@ -18,7 +18,13 @@ SPAM_HIT = -5
 SUSPICIOUS_IP_HIT = -5
 REPUTATION_THRESHOLD = -20
 
-# Connected users: username -> (websocket, list of rooms, deque of message timestamps)
+# Reputation bounds & regrowth
+MIN_REPUTATION = -25
+MAX_REPUTATION = 5
+REGROW_WINDOW_SECONDS = WINDOW_SECONDS # 30 seconds of clean activity
+REGROW_STEP = 1
+
+# Connected users: username -> (websocket, list of rooms, deque of message timestamps, last_clean_timestamp)
 CLIENTS = {} 
 CLIENTS_LOCK = asyncio.Lock()
 
