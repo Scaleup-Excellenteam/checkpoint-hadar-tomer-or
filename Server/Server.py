@@ -20,21 +20,19 @@ logger = logging.getLogger(__name__)
 
 
 
-async def manage_room(websocket, room_id, uid, token):
+async def manage_room(websocket, room_id, uid):
     """
     Receive request from user.
-    validate uid.
+    validate uid and socket against active user list
     check if room exists - if yes, add user to room.
     if not, create room and add user to room.
 
     websocket - senders websocket object.
     room_id - room ID, the room is a special user standing in for multiple users.
     uid - user ID of the one making the request.
-    token - JWT token for auth.
     """
-    if not state.auth.validate_user_token(uid, token):
-        logger.warning(f"Auth failed for manage_room request by user: {uid}")
-        await websocket.send(json.dumps({"error": "Auth failed"}))
+    if uid not in state.CLIENTS or state.CLIENTS[uid][0] != websocket:
+        logger.error("rejected request with wrong uid or websocket")
         return
 
     if room_id not in state.ROOMS:
@@ -44,6 +42,11 @@ async def manage_room(websocket, room_id, uid, token):
     if uid not in state.ROOMS[room_id]:
         state.ROOMS[room_id].append(uid)
         logger.info(f"Added user '{uid}' to room '{room_id}'")
+
+    if uid in state.CLIENTS:
+        user_socket, user_rooms = state.CLIENTS[uid]
+        if room_id not in user_rooms:
+            user_rooms.append(uid)
 
     await websocket.send(json.dumps({"action": "room_response", "payload": {"status": "success"}}))
 
@@ -73,6 +76,10 @@ async def handler(websocket):
                 logger.info(f"Heartbeat message received {websocket}")
                 await websocket.send(json.dumps({"action": "heartbeat"}))
 
+            elif action == "join_room":
+                await manage_room(websocket, data["room_id"], data["uid"], data["token"])
+
+
             elif action == "login":
                 payload = data.get("payload", {})
                 username = payload.get("username")
@@ -84,7 +91,7 @@ async def handler(websocket):
                     token = state.auth.login(username, password)
 
                 if token:
-                    state.CLIENTS[username] = websocket
+                    state.CLIENTS[username] = (websocket,[])
                     logger.info(f"User '{username}' logged in successfully")
                     await websocket.send(json.dumps({"action": "login_response", "token": token}))
                 else:
@@ -109,8 +116,14 @@ async def handler(websocket):
     finally:
         # Remove disconnected socket from CLIENTS
         disconnected_users = []
-        for user, w_sockets in list(state.CLIENTS.items()):
+        for user, (w_sockets,user_rooms) in list(state.CLIENTS.items()):
             if w_sockets == websocket:
+                for room_id in user_rooms:
+                    #lock rooms and remove user
+                    async with state.ROOMS_LOCK:
+                        if room_id in state.ROOMS and user in state.ROOMS[room_id]:
+                            state.ROOMS[room_id].remove(user)
+                            logger.info(f"Removed user '{user}' from room '{room_id}'")
                 disconnected_users.append(user)
                 del state.CLIENTS[user]
 

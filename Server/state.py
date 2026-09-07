@@ -10,7 +10,7 @@ from auth import AuthManager
 
 auth = AuthManager()
 
-# Connected users: username -> websocket
+# Connected users: username -> (websocket, list of rooms)
 CLIENTS = {} 
 CLIENTS_LOCK = asyncio.Lock()
 

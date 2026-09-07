@@ -19,7 +19,11 @@ async def send(address, payload):
     payload - Payload of the message.
     returns True if message was succesfuly delivered, False if failed to send.
     """
-    recipient_ws = state.CLIENTS.get(address) # verify address is valid client
+    client_entry = state.CLIENTS.get(address) # verify address is valid client
+    if not client_entry:
+        logger.error(f"Client {address} not found")
+        return False
+    recipient_ws = client_entry[0]  # Extract websocket from tuple
     if not recipient_ws:
         logger.error(f"Address {address} not found in CLIENTS")
         return False
@@ -91,7 +95,8 @@ async def receive(websocket, data):
 
     # register the sender's websocket connection
     if sender:
-        state.CLIENTS[sender] = websocket
+        existing_rooms = state.CLIENTS[sender][1] if sender in state.CLIENTS else []
+        state.CLIENTS[sender] = (websocket, existing_rooms)
 
     # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
     if not ( state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address) ): #
