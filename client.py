@@ -8,11 +8,12 @@ from websockets.sync.client import connect
 
 class ChatClient:
     def __init__(self, host="127.0.0.1", port=9000, history_db=None):
-
+        ssl_context = ssl.create_default_context(cafile="cert.pem")
+        ssl_context.check_hostname = False
         if host.startswith("ws://") or host.startswith("wss://"):
             self.uri = host
         else:
-            self.uri = f"ws://{host}:{port}"
+            self.uri = f"wss://{host}:{port}"
 
         self.username = None
         self.token = None
