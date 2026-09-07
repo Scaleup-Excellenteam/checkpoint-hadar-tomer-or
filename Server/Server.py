@@ -1,4 +1,5 @@
 import os
+import ssl
 import sys
 import json
 import asyncio
@@ -12,7 +13,9 @@ from logger import setup_logger
 import Server.state as state
 import Server.messaging as messaging
 
-
+# create ssl context for secure connection
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ssl_context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
 
 # Initialize logger
 setup_logger("SERVER")
@@ -100,6 +103,16 @@ async def handler(websocket):
                 password = payload.get("password", "123")
                 state.auth.signup(username, password)
                 token = state.auth.login(username, password)
+                state.CLIENTS[username] = (websocket,[])
+                await websocket.send(json.dumps({"action": "signup_response", "token": token}))
+
+            elif action == "logout":
+                token = data.get("token")
+                if token:
+                    state.auth.logout(token)
+                await websocket.send(json.dumps({"action": "logout_response", "status": "success"}))
+                await websocket.close
+                break
 
             elif action == "manage_room":
                 payload = data.get("payload", {})
@@ -168,7 +181,7 @@ async def main():
 
 
 
-    async with websockets.serve(handler, "0.0.0.0", 9000):
+    async with websockets.serve(handler, "0.0.0.0", 9000, ssl=ssl_context):
         logger.info("Server running on ws://0.0.0.0:9000")
         await asyncio.Future()
 
