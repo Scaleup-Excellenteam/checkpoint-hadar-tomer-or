@@ -1,6 +1,7 @@
 """Shared fixtures for the phased test suite."""
 
 import importlib
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -29,3 +30,25 @@ def isolated_server_import(monkeypatch, tmp_path):
         for module_name in tuple(sys.modules):
             if module_name == "Server" or module_name.startswith("Server."):
                 del sys.modules[module_name]
+
+
+@pytest.fixture
+def auth_manager_factory(monkeypatch, tmp_path):
+    """Create AuthManager instances backed by one temporary SQLite database."""
+    monkeypatch.chdir(tmp_path)
+    from auth import AuthManager
+
+    managers = []
+
+    def create():
+        manager = AuthManager()
+        managers.append(manager)
+        return manager
+
+    yield create
+
+    for manager in managers:
+        try:
+            manager.db.close()
+        except sqlite3.Error:
+            pass
