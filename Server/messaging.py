@@ -2,10 +2,12 @@
 This module handles messaging between the client and the server.
 """
 import json
+import time
 import asyncio
 import Server.state as state
 import logging
 from auth import AuthManager
+from collections import deque
 logger = logging.getLogger(__name__)
 
 
@@ -96,12 +98,24 @@ async def receive(websocket, data):
     # register the sender's websocket connection
     if sender:
         existing_rooms = state.CLIENTS[sender][1] if sender in state.CLIENTS else []
-        state.CLIENTS[sender] = (websocket, existing_rooms)
+        existing_deque = state.CLIENTS[sender][2] if sender in state.CLIENTS else deque()
+        state.CLIENTS[sender] = (websocket, existing_rooms, existing_deque)
 
     # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
     if not ( state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address) ): #
         await websocket.send(json.dumps({"error": "Auth failed"}))
         return
+
+    now = time.monotonic()
+    user_deque = state.CLIENTS[sender][2] #if sender in state.CLIENTS else [] TODO check if section is needed
+    while user_deque and (now - user_deque[0] > state.WINDOW_SECONDS):
+        user_deque.popleft() # remove old messages
+    if len(user_deque) >= state.MAX_MESSAGES:
+        logger.warning(f"Rate limit exceeded for user: {sender}")
+        await websocket.send(json.dumps({"error": "Rate limit exceeded"}))
+        state.auth.update_reputation(token, state.SPAM_HIT)  # Decrease reputation for rate limit violation
+        return
+    user_deque.append(now)  # Add the current timestamp
 
     
     # forward the internal message to the send() func.
