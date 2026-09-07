@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="login-screen" class="screen">
+  <div class="login-card">
+    <h1 class="brand">Chat</h1>
+
+    <label class="field">
+      <span>Server</span>
+      <input id="server-url" type="text" value="wss://127.0.0.1:9000" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span>Username</span>
+      <input id="username" type="text" autocomplete="username">
+    </label>
+
+    <label class="field">
+      <span>Password</span>
+      <input id="password" type="password" autocomplete="current-password">
+    </label>
+
+    <div class="login-actions">
+      <button id="signup-btn" class="btn btn-secondary">Sign up</button>
+      <button id="login-btn" class="btn btn-primary">Log in</button>
+    </div>
+
+    <p id="login-status" class="status"></p>
+  </div>
+</div>
+
+<!-- Chat screen -->
+<div id="chat-screen" class="screen hidden">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span id="me-label" class="me-label"></span>
+      <button id="logout-btn" class="icon-btn" title="Log out">&#8674;</button>
+    </div>
+
+    <div class="new-chat">
+      <input id="new-chat-target" type="text" placeholder="Username or room">
+      <div class="new-chat-actions">
+        <button id="open-chat-btn" class="btn btn-small btn-secondary">Open chat</button>
+        <button id="join-room-btn" class="btn btn-small btn-secondary">Join room</button>
+      </div>
+    </div>
+
+    <div id="chat-list" class="chat-list"></div>
+  </aside>
+
+  <main class="chat-main">
+    <header class="chat-header">
+      <span id="chat-title">Select a chat</span>
+    </header>
+
+    <div id="messages" class="messages"></div>
+
+    <form id="message-form" class="message-form">
+      <input id="message-input" type="text" placeholder="Type a message" autocomplete="off" disabled>
+      <button type="submit" class="btn btn-primary" disabled>Send</button>
+    </form>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
