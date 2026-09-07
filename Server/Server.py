@@ -15,6 +15,7 @@ from logger import setup_logger
 from collections import deque
 import Server.state as state
 import Server.messaging as messaging
+import Server.reputation as reputation
 
 # create ssl context for secure connection
 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -62,6 +63,19 @@ async def handler(websocket):
     Main WebSocket connection handler.
     Dispatches incoming messages to the corresponding modular handlers.
     """
+    client_ip = websocket.remote_address[0]
+
+    #run an ip check on client
+    reputation_score, rep_stats = await reputation.check_ip_rep(client_ip)
+    #TODO - tune threshold according to api
+    logger.info(f"IP: {client_ip} | Reputation score: {reputation_score} | Stats: {rep_stats}")
+    if reputation_score < state.REPUTATION_THRESHOLD:
+        #if reputation under threshold, deny connection and close
+        logger.warning(f"Reputation threshold exceeded: {state.REPUTATION_THRESHOLD}, closing connection for IP: {client_ip}")
+        await websocket.send(json.dumps({"error": "Connection closed due to low reputation score"}))
+        await websocket.close()
+        return
+
     try:
         async for raw_message in websocket:
             try:
@@ -96,6 +110,10 @@ async def handler(websocket):
                     state.CLIENTS[username] = (websocket, [], deque())
                     logger.info(f"User '{username}' logged in successfully")
                     await websocket.send(json.dumps({"action": "login_response", "token": token}))
+                    if reputation_score < -5:
+                        # if reputation is bad but not under block threshold, user starts with lower rep score
+                        state.auth.update_reputation(token, state.SUSPICIOUS_IP_HIT)
+                        logger.info(f"User '{username}' connected from low reputation ip:{client_ip}")
                 else:
                     logger.warning(f"Login failed for user '{username}'")
                     await websocket.send(json.dumps({"error": "Login failed"}))

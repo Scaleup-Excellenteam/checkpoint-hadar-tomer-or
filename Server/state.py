@@ -15,6 +15,8 @@ auth = AuthManager()
 WINDOW_SECONDS = 30 # Time window in seconds for rate limiting
 MAX_MESSAGES = 10
 SPAM_HIT = -5
+SUSPICIOUS_IP_HIT = -5
+REPUTATION_THRESHOLD = -20
 
 # Connected users: username -> (websocket, list of rooms, deque of message timestamps)
 CLIENTS = {} 
