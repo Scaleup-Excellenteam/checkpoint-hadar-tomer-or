@@ -96,7 +96,7 @@ async def receive(websocket, data):
     message = payload.get("message")
 
     # verify sender with auth TODO - this should be done early in a login, then maintain a TLS connection.
-    if not (state.auth.validate_user_token(sender, token) or state.auth.validate_user_token(sender, address)):
+    if not state.auth.validate_user_token(sender, token):
         await websocket.send(json.dumps({"error": "Auth failed"}))
         return
 

@@ -112,7 +112,7 @@ async def handler(websocket):
                                 logger.info(
                                     f"[REPUTATION_REGROW] User '{user}' regrew by +{state.REGROW_STEP} to {new_rep} "
                                 )
-                            state.CLIENTS[user] = (ws, rooms, msg_deq, now)
+                            state.CLIENTS[user] = (ws, rooms, msg_deque, now)
                         break
 
             elif action == "join_room":
@@ -163,8 +163,7 @@ async def handler(websocket):
                 payload = data.get("payload", {})
                 room_id = payload.get("room_id")
                 uid = payload.get("username") or payload.get("uid")
-                token = data.get("token")
-                await manage_room(websocket, room_id, uid, token)
+                await manage_room(websocket, room_id, uid)
 
             else:
                 logger.warning(f"Received unknown action: {action}")
@@ -208,7 +207,7 @@ async def account_handler(websocket, path):
                 username = payload.get("username")
                 password = payload.get("password")
                 if state.auth.login(username, password):
-                    state.CLIENTS[username] = (websocket,[],collections.deque)
+                    state.CLIENTS[username] = (websocket,[],deque(),time.monotonic())
                     logger.info(f"User '{username}' logged in successfully")
 
 
