@@ -120,8 +120,8 @@ async def handler(websocket):
 
             elif action == "login":
                 payload = data.get("payload", {})
-                username = payload.get("username")
-                password = payload.get("password", "123")
+                username = payload.get("username").strip()
+                password = payload.get("password")
 
                 token = state.auth.login(username, password)
 
@@ -148,7 +148,6 @@ async def handler(websocket):
                     await websocket.send(json.dumps({"error": "Username already taken"}))
                 else:
                     token = state.auth.login(username, password)
-                    state.CLIENTS[username] = (websocket, [], deque(), time.monotonic())
                     logger.info(f"User '{username}' signed up successfully")
                     await websocket.send(json.dumps({"action": "signup_response", "token": token}))
 
