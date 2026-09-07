@@ -8,9 +8,15 @@ The module allows us to lock the state variables to prevent race conditions.
 import asyncio
 from auth import AuthManager
 
+
 auth = AuthManager()
 
-# Connected users: username -> (websocket, list of rooms)
+#TODO - move to a config file
+WINDOW_SECONDS = 30 # Time window in seconds for rate limiting
+MAX_MESSAGES = 10
+SPAM_HIT = -5
+
+# Connected users: username -> (websocket, list of rooms, deque of message timestamps)
 CLIENTS = {} 
 CLIENTS_LOCK = asyncio.Lock()
 

@@ -5,11 +5,14 @@ import json
 import asyncio
 import logging
 import websockets
+
 # Ensure project root is in sys.path for cross-module imports
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
 from logger import setup_logger
+from collections import deque
 import Server.state as state
 import Server.messaging as messaging
 
@@ -47,7 +50,7 @@ async def manage_room(websocket, room_id, uid):
         logger.info(f"Added user '{uid}' to room '{room_id}'")
 
     if uid in state.CLIENTS:
-        user_socket, user_rooms = state.CLIENTS[uid]
+        user_socket, user_rooms, user_msg = state.CLIENTS[uid]
         if room_id not in user_rooms:
             user_rooms.append(room_id)
 
@@ -90,7 +93,7 @@ async def handler(websocket):
                 token = state.auth.login(username, password)
 
                 if token:
-                    state.CLIENTS[username] = (websocket,[])
+                    state.CLIENTS[username] = (websocket, [], deque())
                     logger.info(f"User '{username}' logged in successfully")
                     await websocket.send(json.dumps({"action": "login_response", "token": token}))
                 else:
@@ -108,7 +111,7 @@ async def handler(websocket):
                     await websocket.send(json.dumps({"error": "Username already taken"}))
                 else:
                     token = state.auth.login(username, password)
-                    state.CLIENTS[username] = (websocket, [])
+                    #state.CLIENTS[username] = (websocket, []) TODO - check if needed.
                     logger.info(f"User '{username}' signed up successfully")
                     await websocket.send(json.dumps({"action": "signup_response", "token": token}))
 
@@ -138,7 +141,7 @@ async def handler(websocket):
     finally:
         # Remove disconnected socket from CLIENTS
         disconnected_users = []
-        for user, (w_sockets,user_rooms) in list(state.CLIENTS.items()):
+        for user, (w_sockets,user_rooms, user_msg) in list(state.CLIENTS.items()):
             if w_sockets == websocket:
                 for room_id in user_rooms:
                     #lock rooms and remove user
@@ -169,7 +172,7 @@ async def account_handler(websocket, path):
                 username = payload.get("username")
                 password = payload.get("password")
                 if state.auth.login(username, password):
-                    state.CLIENTS[username] = (websocket,[])
+                    state.CLIENTS[username] = (websocket,[],collections.deque)
                     logger.info(f"User '{username}' logged in successfully")
 
 

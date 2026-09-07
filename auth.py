@@ -18,11 +18,12 @@ class User:
 class AuthManager:
     def __init__(self):
         self.db = sqlite3.connect("users.db", check_same_thread=False)
-
+        # reputation persists with user
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
-                password_hash TEXT NOT NULL
+                password_hash TEXT NOT NULL,
+                reputation TINYINT NOT NULL DEFAULT 0
             )
         """)
 
@@ -129,3 +130,33 @@ class AuthManager:
             return True
 
         return False
+
+
+    def get_reputation(self, token: str):
+        """
+        This function returns the reputation of a user connected to the given token.
+
+        token - the JWT connected to the user
+        returns user score or -200 if the token is invalid or user not found.
+        rep field uses tiny int, so it has a -128/127 range or 0-255, so -200 is a clear indicator.
+        """
+        if token not in self.sessions:
+            return -200 #
+        username = self.sessions[token]
+        row = self.db.execute("SELECT reputation FROM users WHERE username = ?", (username,)).fetchone()
+        return row[0] if row else -200
+
+
+
+    def update_reputation(self, token: str, rep_change: int):
+        """
+        This function updates the reputation of a user connected to the given token, by rep_change points.
+        token - the JWT connected to the user
+        rep_change - the reputation of the user connected to the given token, positive or negative.
+        """
+        if token not in self.sessions:
+            return False
+        username = self.sessions[token]
+        self.db.execute("UPDATE users SET reputation = reputation + ? WHERE username = ?",(rep_change,username))
+        self.db.commit()
+        return True
