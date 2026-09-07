@@ -60,3 +60,6 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Local testing plan
+/plan.md
