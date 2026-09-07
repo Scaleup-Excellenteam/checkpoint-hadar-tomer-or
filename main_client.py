@@ -1,7 +1,17 @@
+import logging
+
+from logger import setup_logger
+
+# Set up before importing ChatClient, so this process's log file/role
+# ("MAIN_CLIENT") wins over client.py's own setup_logger("CLIENT") call.
+setup_logger("MAIN_CLIENT")
+logger = logging.getLogger(__name__)
+
 from client import ChatClient
 
 server_ip = input("Server IP [press Enter for 127.0.0.1]: ").strip() or "127.0.0.1"
 
+logger.info("Connecting to server at %s", server_ip)
 client = ChatClient(host=server_ip, port=9000)
 
 current_room = None
@@ -20,9 +30,12 @@ def enter_room(room):
     global current_room
     current_room = room
     client.start_chat(room)
+    logger.info("Entered room/chat '%s'", room)
 
     print(f"--- History with {room} ---")
-    for chat_id, sender, direction, message, timestamp in client.get_history(room):
+    history = client.get_history(room)
+    logger.debug("Loaded %d history rows for '%s'", len(history), room)
+    for chat_id, sender, direction, message, timestamp in history:
         who = "you" if direction == "sent" else sender
         print(f"[{timestamp}] {who}: {message}")
 
@@ -30,6 +43,7 @@ def enter_room(room):
     while True:
         text = input("> ")
         if text == "/leave":
+            logger.debug("Leaving room/chat '%s'", room)
             break
         client.send_message(room, text)
 
@@ -48,6 +62,7 @@ def auth_menu():
         if choice == "1":
             username = input("Username: ").strip()
             password = input("Password: ").strip()
+            logger.debug("Signup attempt for '%s'", username)
             if client.signup(username, password):
                 print("Signup successful. You can now log in.")
             else:
@@ -56,6 +71,7 @@ def auth_menu():
         elif choice == "2":
             username = input("Username: ").strip()
             password = input("Password: ").strip()
+            logger.debug("Login attempt for '%s'", username)
             if client.login(username, password):
                 print(f"Logged in as {client.username}")
                 return True
@@ -63,6 +79,7 @@ def auth_menu():
                 print("Login failed.")
 
         elif choice == "3":
+            logger.info("User exited from auth menu")
             client.close()
             return False
 
@@ -100,10 +117,12 @@ def chat_menu():
             open_chat()
 
         elif choice == "3":
+            logger.debug("Sending heartbeat from menu")
             hb = client.heartbeat()
             print("Heartbeat response:", hb)
 
         elif choice == "4":
+            logger.info("User '%s' exited chat menu", client.username)
             client.close()
             break
 
