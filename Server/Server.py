@@ -46,7 +46,7 @@ async def manage_room(websocket, room_id, uid):
     if uid in state.CLIENTS:
         user_socket, user_rooms = state.CLIENTS[uid]
         if room_id not in user_rooms:
-            user_rooms.append(uid)
+            user_rooms.append(room_id)
 
     await websocket.send(json.dumps({"action": "room_response", "payload": {"status": "success"}}))
 
@@ -77,8 +77,7 @@ async def handler(websocket):
                 await websocket.send(json.dumps({"action": "heartbeat"}))
 
             elif action == "join_room":
-                await manage_room(websocket, data["room_id"], data["uid"], data["token"])
-
+                await manage_room(websocket, data["room_id"], data["uid"])
 
             elif action == "login":
                 payload = data.get("payload", {})
@@ -86,9 +85,6 @@ async def handler(websocket):
                 password = payload.get("password", "123")
 
                 token = state.auth.login(username, password)
-                if not token:
-                    state.auth.signup(username, password)
-                    token = state.auth.login(username, password)
 
                 if token:
                     state.CLIENTS[username] = (websocket,[])
@@ -97,6 +93,13 @@ async def handler(websocket):
                 else:
                     logger.warning(f"Login failed for user '{username}'")
                     await websocket.send(json.dumps({"error": "Login failed"}))
+
+            elif action == "signup":
+                payload = data.get("payload", {})
+                username = payload.get("username")
+                password = payload.get("password", "123")
+                state.auth.signup(username, password)
+                token = state.auth.login(username, password)
 
             elif action == "manage_room":
                 payload = data.get("payload", {})
@@ -129,6 +132,35 @@ async def handler(websocket):
 
         if disconnected_users:
             logger.info(f"Removed disconnected user session(s): {disconnected_users}")
+
+async def account_handler(websocket, path):
+    try:
+        async for raw_message in websocket:
+            try:
+                data = json.loads(raw_message)
+            except json.JSONDecodeError:
+                logger.error("Received invalid JSON from client")
+                await websocket.send(json.dumps({"error": "Invalid JSON format"}))
+                continue
+
+            action = data.get("action")
+            logger.debug(f"Handling action: {action}")
+            if action == "login":
+                payload = data.get("payload", {})
+                username = payload.get("username")
+                password = payload.get("password")
+                if state.auth.login(username, password):
+                    state.CLIENTS[username] = (websocket,[])
+                    logger.info(f"User '{username}' logged in successfully")
+
+
+    except websockets.ConnectionClosed:
+        logger.info("Client connection closed")
+    except Exception as e:
+        logger.error(f"Unexpected error in handler: {e}", exc_info=True)
+    finally:
+        pass # TODO check if anything is needed here
+
 
 
 async def main():
