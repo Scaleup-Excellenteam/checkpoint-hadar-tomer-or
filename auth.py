@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
-from hashlib import new
+import hmac
+import hashlib
 import sqlite3
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -8,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = "my-super-secret-key"
 ALGORITHM = "HS256"
+PBKDF2_ITERATIONS = 100_000
 
 
 @dataclass
@@ -35,19 +37,56 @@ class AuthManager:
         self.sessions = {}
 
 
-    def hash_password(self, password: str) -> str:
-        return new("sha256", password.encode()).hexdigest()
+    def hash_password(self, password: str, salt: bytes = None) -> str:
+        """
+        Hashes a password using PBKDF2-HMAC-SHA256 with a unique per-user salt.
+        Returns: 'pbkdf2_sha256$<iterations>$<hex_salt>$<hex_hash>'.
+        """
+        if salt is None:
+            salt = os.urandom(16)
+        elif isinstance(salt, str):
+            salt = bytes.fromhex(salt)
+
+        derived = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            PBKDF2_ITERATIONS,
+        )
+        return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt.hex()}${derived.hex()}"
+
+
+    def verify_password(self, password: str, stored_hash: str) -> bool:
+        """
+        Verifies a password against the stored salted hash using constant-time comparison.
+        """
+        if not stored_hash or not password:
+            return False
+
+        try:
+            if stored_hash.startswith("pbkdf2_sha256$"):
+                _, iterations_str, salt_hex, hash_hex = stored_hash.split("$", 3)
+                iterations = int(iterations_str)
+                salt = bytes.fromhex(salt_hex)
+                derived = hashlib.pbkdf2_hmac(
+                    "sha256",
+                    password.encode("utf-8"),
+                    salt,
+                    iterations,
+                )
+                return hmac.compare_digest(derived.hex(), hash_hex)
+            else:
+                # Fallback for legacy unsalted SHA-256 hashes
+                legacy_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+                return hmac.compare_digest(legacy_hash, stored_hash)
+        except Exception:
+            return False
 
 
     def signup(self, username: str, password: str):
         if not username or not password:
             return False
-        
-        
-        
-        if not username or not password:
-            return False
-        
+
         username = username.strip()
         password = password.strip()
 
@@ -82,8 +121,6 @@ class AuthManager:
         username = username.strip()
         password = password.strip()
 
-        password_hash = self.hash_password(password)
-
         user = self.db.execute(
             "SELECT password_hash FROM users WHERE username = ?",
             (username,)
@@ -92,7 +129,7 @@ class AuthManager:
         if not user:
             return False
 
-        if password_hash != user[0]:
+        if not self.verify_password(password, user[0]):
             return False
 
         token = jwt.encode(
@@ -160,10 +197,10 @@ class AuthManager:
 
 
 
-    def update_reputation(self, token: str, rep_change: int, min_rep: int = -25, max_rep: int = 5):
+    def update_reputation(self, token: str, rep_change: int, min_rep: int = None, max_rep: int = None):
         """
         This function updates the reputation of a user connected to the given token, by rep_change points.
-        Clamps the reputation score within [min_rep, max_rep].
+        Optionally clamps the reputation score within [min_rep, max_rep].
         """
         if token not in self.sessions:
             return False
@@ -179,15 +216,21 @@ class AuthManager:
         row = self.db.execute("SELECT reputation FROM users WHERE username = ?", (username,)).fetchone()
         return row[0] if row else -200
 
-    def update_reputation_by_username(self, username: str, rep_change: int, min_rep: int = -25, max_rep: int = 5):
+    def update_reputation_by_username(self, username: str, rep_change: int, min_rep: int = None, max_rep: int = None):
         """
-        Updates reputation of a user directly by username, clamped within [min_rep, max_rep].
+        Updates reputation of a user directly by username, optionally clamped within [min_rep, max_rep].
         """
         if not username:
             return False
-        self.db.execute(
-            "UPDATE users SET reputation = MAX(?, MIN(?, reputation + ?)) WHERE username = ?",
-            (min_rep, max_rep, rep_change, username)
-        )
+        if min_rep is not None and max_rep is not None:
+            self.db.execute(
+                "UPDATE users SET reputation = MAX(?, MIN(?, reputation + ?)) WHERE username = ?",
+                (min_rep, max_rep, rep_change, username)
+            )
+        else:
+            self.db.execute(
+                "UPDATE users SET reputation = reputation + ? WHERE username = ?",
+                (rep_change, username)
+            )
         self.db.commit()
         return True
