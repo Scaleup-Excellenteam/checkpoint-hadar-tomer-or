@@ -187,6 +187,13 @@ class ChatClient {
       if (response.error) {
         return { ok: false, error: response.error };
       }
+      if (response.action === "dlp_blocked") {
+        const payload = response.payload || {};
+        return {
+          ok: false,
+          error: `Blocked by DLP: ${payload.reason} (score ${payload.score}, reputation ${payload.reputation})`,
+        };
+      }
     } catch (e) {
       return { ok: false, error: "No response from server (timed out)." };
     }
