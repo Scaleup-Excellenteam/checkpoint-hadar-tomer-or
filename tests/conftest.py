@@ -4,6 +4,7 @@ import importlib
 import sqlite3
 import ssl
 import sys
+import aiohttp
 from pathlib import Path
 
 import pytest
