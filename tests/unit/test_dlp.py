@@ -78,6 +78,29 @@ def test_empty_or_none_message_is_allowed():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("message", [
+    "אננס",
+    "pineapple",
+    "PINEAPPLE is forbidden",
+    "אני אוהב פיצה עם אננס",  # otherwise-casual message, still blocked
+])
+def test_pineapple_is_always_blocked_regardless_of_score(message):
+    decision = dlp.scan(message)
+
+    assert decision.allowed is False
+    assert decision.reason_code == dlp.FORBIDDEN_PINEAPPLE
+
+
+@pytest.mark.unit
+def test_pineapple_rule_takes_priority_over_recipe_scoring():
+    # Also has clear recipe-structure signals, but the reason code should
+    # still be the pineapple rule since it's checked first.
+    decision = dlp.scan("אננס: 250 גרם קמח, לאפות")
+
+    assert decision.reason_code == dlp.FORBIDDEN_PINEAPPLE
+
+
+@pytest.mark.unit
 def test_findings_report_which_categories_contributed():
     decision = dlp.scan("מתכון: 200 גרם קמח, לאפות")
 

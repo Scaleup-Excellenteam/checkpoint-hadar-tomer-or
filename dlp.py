@@ -20,6 +20,10 @@ import unicodedata
 
 BLOCK_THRESHOLD = 5
 
+# Always blocked outright, regardless of score - a house rule, not a leak signal.
+PINEAPPLE_TERMS = ("אננס", "pineapple")
+FORBIDDEN_PINEAPPLE = "DLP_FORBIDDEN_PINEAPPLE"
+
 DECLARATION_TERMS = (
     "מתכון", "המתכון", "מרכיבים", "הוראות הכנה",
     "recipe", "ingredients", "instructions",
@@ -95,6 +99,15 @@ def scan(message: str, threshold: int = BLOCK_THRESHOLD) -> DLPDecision:
     (required by the project brief) without re-deriving it.
     """
     normalized = _normalize(message or "")
+
+    pineapple_matches = tuple(term for term in PINEAPPLE_TERMS if term in normalized)
+    if pineapple_matches:
+        return DLPDecision(
+            allowed=False,
+            score=threshold,
+            reason_code=FORBIDDEN_PINEAPPLE,
+            findings=(DLPFinding(category="pineapple", matched_terms=pineapple_matches, score=threshold),),
+        )
 
     findings = []
     total_score = 0
