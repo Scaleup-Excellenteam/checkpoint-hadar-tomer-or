@@ -6,6 +6,7 @@ import time
 import asyncio
 import Server.state as state
 import logging
+import dlp
 from auth import AuthManager
 from collections import deque
 logger = logging.getLogger(__name__)
@@ -142,7 +143,32 @@ async def receive(websocket, data):
                 )
             state.CLIENTS[sender] = (c_ws, c_rooms, c_deq, now)
 
-    
+    # DLP: scan the outgoing content before it reaches any recipient or gets
+    # saved anywhere. Never log the raw message - only the reason and score.
+    dlp_decision = dlp.scan(message)
+    if not dlp_decision.allowed:
+        logger.warning(
+            f"[DLP] Blocked message from '{sender}' to '{address}': "
+            f"reason={dlp_decision.reason_code} score={dlp_decision.score}"
+        )
+        state.auth.update_reputation(token, state.DLP_HIT, state.MIN_REPUTATION, state.MAX_REPUTATION)
+        new_rep = state.auth.get_reputation(token)
+        await websocket.send(json.dumps({
+            "action": "dlp_blocked",
+            "payload": {
+                "reason": dlp_decision.reason_code,
+                "score": dlp_decision.score,
+                "reputation": new_rep,
+            }
+        }))
+        if new_rep <= state.MIN_REPUTATION:
+            logger.warning(
+                f"User '{sender}' reached minimum reputation after a DLP violation; closing connection"
+            )
+            await websocket.send(json.dumps({"error": "Account banned due to repeated policy violations"}))
+            await websocket.close(code=1008, reason="Reputation threshold exceeded")
+        return
+
     # forward the internal message to the send() func.
     logger.info(f"Received message from: {sender} to: {address}")
     if address in state.ROOMS:

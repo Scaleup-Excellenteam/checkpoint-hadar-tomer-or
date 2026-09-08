@@ -253,7 +253,6 @@ def test_close_closes_socket_and_history_connection(client_factory):
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(strict=True, reason="BUG-CLIENT-001: stale acknowledgements are consumed as control responses")
 def test_heartbeat_does_not_consume_a_stale_send_acknowledgement(client_factory):
     chat_client = client_factory()
     stale_ack = {"action": "ack", "payload": {"status": "success"}}
@@ -265,7 +264,6 @@ def test_heartbeat_does_not_consume_a_stale_send_acknowledgement(client_factory)
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(strict=True, reason="BUG-CLIENT-002: login accepts unrelated token-bearing control responses")
 def test_login_rejects_an_unrelated_token_bearing_response(client_factory, monkeypatch):
     chat_client = client_factory()
     monkeypatch.setattr(chat_client, "_open_history_db", lambda: None)
