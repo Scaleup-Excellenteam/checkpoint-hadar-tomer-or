@@ -80,6 +80,16 @@ async def handle_login(websocket, data, client_ip, reputation_score):
         pass
 
     if token:
+        # DLP/Anti-Bot: a user who was already driven to minimum reputation
+        # (e.g. repeated DLP violations) stays locked out on future logins,
+        # not just disconnected once.
+        existing_rep = state.auth.get_reputation_by_username(username)
+        if existing_rep <= state.MIN_REPUTATION:
+            logger.warning(f"Rejected login for banned user '{username}' (reputation={existing_rep})")
+            state.auth.logout(token)
+            await websocket.send(json.dumps({"error": "Account banned due to repeated policy violations"}))
+            return
+
         state.CLIENTS[username] = (websocket, [], deque(), time.monotonic())
         logger.info(f"User '{username}' logged in successfully")
         await websocket.send(json.dumps({"action": "login_response", "token": token}))

@@ -257,6 +257,37 @@ const chatScreen = document.getElementById("chat-screen");
 const loginStatus = document.getElementById("login-status");
 
 const serverUrlInput = document.getElementById("server-url");
+
+/**
+ * Whoever runs the server can hand out a ready-to-use link:
+ * index.html?server=wss://192.168.1.23:9000 (or just the host/IP - "wss://"
+ * and ":9000" are added automatically). That value is remembered in
+ * localStorage, so after the first open it's pre-filled even without the
+ * query param.
+ */
+(function initServerUrl() {
+  const SERVER_URL_KEY = "chat_server_url";
+  const fromQuery = new URLSearchParams(location.search).get("server");
+
+  if (fromQuery) {
+    const normalized = /^wss?:\/\//.test(fromQuery)
+      ? fromQuery
+      : `wss://${fromQuery}:9000`;
+    serverUrlInput.value = normalized;
+    localStorage.setItem(SERVER_URL_KEY, normalized);
+    return;
+  }
+
+  const saved = localStorage.getItem(SERVER_URL_KEY);
+  if (saved) {
+    serverUrlInput.value = saved;
+  }
+
+  serverUrlInput.addEventListener("change", () => {
+    localStorage.setItem(SERVER_URL_KEY, serverUrlInput.value.trim());
+  });
+})();
+
 const usernameInput = document.getElementById("username");
 const passwordInput = document.getElementById("password");
 const signupBtn = document.getElementById("signup-btn");

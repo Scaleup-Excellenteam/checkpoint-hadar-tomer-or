@@ -37,6 +37,9 @@ class ChatClient:
         # Callback for incoming chat messages
         self._message_handler = None
 
+        # Callback for the sender's own outgoing messages getting DLP-blocked
+        self._dlp_handler = None
+
         # Connect to server
         self.socket = connect(self.uri, ssl=ssl_context)
         logger.info("Connected to server at %s", self.uri)
@@ -154,6 +157,15 @@ class ChatClient:
         """
         self._message_handler = handler
 
+    def set_dlp_handler(self, handler):
+        """
+        Set function called as handler(target_address, payload) whenever a
+        message this client sent gets blocked by server-side DLP. `payload`
+        carries "reason", "score" and "reputation" so the UI can show the
+        decision and why it was made.
+        """
+        self._dlp_handler = handler
+
 
     def start_chat(self, username):
         """
@@ -235,9 +247,20 @@ class ChatClient:
         logger.debug("Message sent to '%s': %s", target_address, message)
 
         try:
-            self._wait_for("ack", timeout=5)
+            response = self._wait_for(("ack", "dlp_blocked"), timeout=5)
         except queue.Empty:
-            logger.warning("No ack received for message to '%s'", target_address)
+            logger.warning("No response received for message to '%s'", target_address)
+            return True
+
+        if response.get("action") == "dlp_blocked":
+            payload = response.get("payload", {})
+            logger.warning(
+                "Message to '%s' blocked by DLP: reason=%s score=%s reputation=%s",
+                target_address, payload.get("reason"), payload.get("score"), payload.get("reputation")
+            )
+            if self._dlp_handler:
+                self._dlp_handler(target_address, payload)
+            return False
 
         return True
 
@@ -404,19 +427,26 @@ class ChatClient:
 
     def _wait_for(self, expected_action, timeout=5):
         """
-        Pops from the control queue until it finds a packet matching the
-        expected action (or an error), instead of blindly trusting whatever
-        happens to be next in the FIFO queue.
+        Pops from the control queue until it finds a packet matching one of
+        the expected action(s) (or an error), instead of blindly trusting
+        whatever happens to be next in the FIFO queue.
+
+        `expected_action` may be a single action string or a tuple/list of
+        acceptable actions (e.g. a normal "ack" vs. a "dlp_blocked" verdict
+        are both valid replies to a "send").
         """
+        expected_actions = (
+            (expected_action,) if isinstance(expected_action, str) else tuple(expected_action)
+        )
         deadline = time.monotonic() + timeout
         remaining = timeout
         while True:
             packet = self._control_queue.get(timeout=remaining)
-            if packet.get("action") == expected_action or "error" in packet:
+            if packet.get("action") in expected_actions or "error" in packet:
                 return packet
             logger.debug(
-                "Discarding unrelated control packet while waiting for '%s': %s",
-                expected_action, packet
+                "Discarding unrelated control packet while waiting for %s: %s",
+                expected_actions, packet
             )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
