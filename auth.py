@@ -111,10 +111,20 @@ class AuthManager:
 
     def validate_user_token(self, user: str, token: str):
 
-        if token not in self.sessions:
+        if token not in self.sessions or self.sessions[token] != user:
             return False
 
-        return self.sessions[token] == user
+        try:
+            claims = jwt.decode(
+                token,
+                SECRET_KEY,
+                algorithms=[ALGORITHM],
+                options={"require": ["exp", "username"]},
+            )
+        except jwt.InvalidTokenError:
+            return False
+
+        return claims["username"] == user
 
 
     def validate_user_address(self, sender: str, address: str):

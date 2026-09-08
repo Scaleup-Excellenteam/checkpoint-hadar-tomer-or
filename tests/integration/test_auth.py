@@ -1,9 +1,23 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import jwt
 import pytest
 
 from auth import ALGORITHM, SECRET_KEY
+
+
+@pytest.fixture
+def token_validation_time(monkeypatch):
+    """Fix JWT validation time without replacing signature or claim checks."""
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    monkeypatch.setattr(jwt.api_jwt, "datetime", FixedDatetime)
+    return now
 
 
 @pytest.mark.integration
@@ -137,17 +151,15 @@ def test_accounts_and_reputation_persist_but_sessions_do_not(auth_manager_factor
 
 @pytest.mark.integration
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-AUTH-001: validate_user_token accepts expired JWTs stored in sessions",
-)
-def test_validate_user_token_rejects_an_expired_signed_token(auth_manager_factory):
+def test_validate_user_token_rejects_an_expired_signed_token(
+    auth_manager_factory, token_validation_time
+):
     manager = auth_manager_factory()
     assert manager.signup("alice", "password") is True
     expired_token = jwt.encode(
         {
             "username": "alice",
-            "exp": datetime.now(timezone.utc) - timedelta(seconds=1),
+            "exp": int(token_validation_time.timestamp()) - 1,
         },
         SECRET_KEY,
         algorithm=ALGORITHM,
@@ -155,3 +167,39 @@ def test_validate_user_token_rejects_an_expired_signed_token(auth_manager_factor
     manager.sessions[expired_token] = "alice"
 
     assert manager.validate_user_token("alice", expired_token) is False
+    assert manager.sessions == {expired_token: "alice"}
+
+
+@pytest.mark.integration
+@pytest.mark.security
+@pytest.mark.parametrize("case", [
+    "valid", "no-session", "malformed", "invalid-signature", "wrong-algorithm",
+    "missing-exp", "missing-username", "wrong-username", "expires-now",
+])
+def test_token_validation_requires_valid_jwt_and_session_without_mutation(
+    auth_manager_factory, token_validation_time, case
+):
+    manager = auth_manager_factory()
+    claims = {"username": "alice", "exp": int(token_validation_time.timestamp()) + 3600}
+    if case == "missing-exp":
+        del claims["exp"]
+    elif case == "missing-username":
+        del claims["username"]
+    elif case == "wrong-username":
+        claims["username"] = "bob"
+    elif case == "expires-now":
+        claims["exp"] = int(token_validation_time.timestamp())
+
+    token = jwt.encode(
+        claims,
+        "synthetic-wrong-signing-key-for-test" if case == "invalid-signature" else SECRET_KEY,
+        algorithm="HS384" if case == "wrong-algorithm" else ALGORITHM,
+    )
+    if case == "malformed":
+        token = "not-a-jwt"
+    if case != "no-session":
+        manager.sessions[token] = "alice"
+    sessions_before = manager.sessions.copy()
+
+    assert manager.validate_user_token("alice", token) is (case == "valid")
+    assert manager.sessions == sessions_before
