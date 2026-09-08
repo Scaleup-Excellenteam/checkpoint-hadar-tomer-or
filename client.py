@@ -5,6 +5,7 @@ import queue
 import sqlite3
 import threading
 import logging
+import time
 from datetime import datetime, timezone
 from websockets.sync.client import connect
 
@@ -62,7 +63,7 @@ class ChatClient:
         self._send(request)
 
         try:
-            response = self._control_queue.get(timeout=5)
+            response = self._wait_for("signup_response")
         except queue.Empty:
             logger.warning("Signup timed out for user '%s'", username)
             return False
@@ -89,7 +90,7 @@ class ChatClient:
         self._send(request)
 
         try:
-            response = self._control_queue.get(timeout=5)
+            response = self._wait_for("login_response")
         except queue.Empty:
             logger.warning("Login timed out for user '%s'", username)
             return False
@@ -126,7 +127,7 @@ class ChatClient:
         self._send(request)
 
         try:
-            response = self._control_queue.get(timeout=5)
+            response = self._wait_for("logout_response")
         except queue.Empty:
             logger.warning("Logout timed out for user '%s'", username)
             return False
@@ -182,7 +183,7 @@ class ChatClient:
         self._send(request)
 
         try:
-            response = self._control_queue.get(timeout=5)
+            response = self._wait_for("room_response")
         except queue.Empty:
             logger.warning("Join room timed out for '%s'", room)
             return False
@@ -233,6 +234,11 @@ class ChatClient:
 
         logger.debug("Message sent to '%s': %s", target_address, message)
 
+        try:
+            self._wait_for("ack", timeout=5)
+        except queue.Empty:
+            logger.warning("No ack received for message to '%s'", target_address)
+
         return True
 
     def heartbeat(self):
@@ -243,7 +249,7 @@ class ChatClient:
         })
 
         try:
-            response = self._control_queue.get(timeout=5)
+            response = self._wait_for("heartbeat")
             logger.debug("Heartbeat response: %s", response)
             return response
 
@@ -366,11 +372,16 @@ class ChatClient:
                 logger.info("Message received from '%s' in '%s'", sender, chat_id)
 
                 if self._message_handler:
-                    self._message_handler(
-                        chat_id,
-                        sender,
-                        message
-                    )
+                    try:
+                        self._message_handler(
+                            chat_id,
+                            sender,
+                            message
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Message handler raised an exception; continuing to listen"
+                        )
 
             # Login / signup / logout / heartbeat responses
             else:
@@ -390,6 +401,26 @@ class ChatClient:
         except Exception:
             logger.debug("Failed to receive/parse message", exc_info=True)
             return None
+
+    def _wait_for(self, expected_action, timeout=5):
+        """
+        Pops from the control queue until it finds a packet matching the
+        expected action (or an error), instead of blindly trusting whatever
+        happens to be next in the FIFO queue.
+        """
+        deadline = time.monotonic() + timeout
+        remaining = timeout
+        while True:
+            packet = self._control_queue.get(timeout=remaining)
+            if packet.get("action") == expected_action or "error" in packet:
+                return packet
+            logger.debug(
+                "Discarding unrelated control packet while waiting for '%s': %s",
+                expected_action, packet
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise queue.Empty
 
     def _send(self, data):
 
