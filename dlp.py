@@ -110,6 +110,7 @@ def scan(message: str, threshold: int = BLOCK_THRESHOLD) -> DLPDecision:
         )
 
     findings = []
+    scores_by_category = {}
     total_score = 0
 
     for category, terms, per_term_score, cap in _CATEGORIES:
@@ -117,8 +118,16 @@ def scan(message: str, threshold: int = BLOCK_THRESHOLD) -> DLPDecision:
         if matched:
             findings.append(DLPFinding(category=category, matched_terms=matched, score=score))
             total_score += score
+        scores_by_category[category] = bool(matched)
 
-    if total_score >= threshold:
+    # An ingredient plus a quantity or a preparation step is recipe-like
+    # structure even if the combined score is under the threshold (e.g. a
+    # short "250 grams flour" has no room to accumulate more signals).
+    has_structure = scores_by_category["ingredient"] and (
+        scores_by_category["quantity"] or scores_by_category["preparation"]
+    )
+
+    if total_score >= threshold or has_structure:
         return DLPDecision(
             allowed=False,
             score=total_score,

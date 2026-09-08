@@ -33,6 +33,17 @@ def test_a_lone_recipe_question_is_not_blocked():
 
 
 @pytest.mark.unit
+def test_ingredient_plus_quantity_blocks_even_under_the_score_threshold():
+    # Short enough that the raw score alone wouldn't cross the threshold,
+    # but ingredient + quantity together is still clear recipe structure.
+    decision = dlp.scan("250 גרם קמח")
+
+    assert decision.allowed is False
+    assert decision.score < dlp.BLOCK_THRESHOLD
+    assert decision.reason_code == dlp.RECIPE_LEAK_SUSPECTED
+
+
+@pytest.mark.unit
 def test_declaration_alone_scores_below_threshold():
     decision = dlp.scan("מתכון")
 
