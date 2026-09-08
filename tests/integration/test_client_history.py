@@ -62,8 +62,8 @@ def test_default_history_paths_are_per_user_and_can_be_redirected_to_temp_direct
     alice._save_history("shared", "alice", "sent", "alice only")
     bob._save_history("shared", "bob", "sent", "bob only")
 
-    assert (tmp_path / "chat_history_alice.db").exists()
-    assert (tmp_path / "chat_history_bob.db").exists()
+    assert (tmp_path / "DB" / "chat_history_alice.db").exists()
+    assert (tmp_path / "DB" / "chat_history_bob.db").exists()
     assert [row[3] for row in alice.get_history("shared")] == ["alice only"]
     assert [row[3] for row in bob.get_history("shared")] == ["bob only"]
 

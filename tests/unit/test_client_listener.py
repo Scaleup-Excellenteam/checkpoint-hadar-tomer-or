@@ -101,7 +101,6 @@ def test_raw_recv_returns_non_object_json_but_listener_cannot_classify_it(client
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(strict=True, reason="BUG-CLIENT-003: message-handler exceptions terminate the listener")
 def test_callback_exception_does_not_stop_later_incoming_messages(client_factory, monkeypatch):
     chat_client = client_factory()
     chat_client.username = "alice"

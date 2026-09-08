@@ -34,8 +34,26 @@ def test_signup_trims_credentials_prevents_duplicates_and_never_stores_plaintext
         "SELECT username, password_hash, reputation FROM users WHERE username = ?", ("alice",)
     ).fetchone()
 
-    assert stored_user == ("alice", manager.hash_password("secret phrase"), 0)
+    assert stored_user[0] == "alice"
+    assert manager.verify_password("secret phrase", stored_user[1]) is True
     assert stored_user[1] != "secret phrase"
+    assert stored_user[2] == 0
+
+
+@pytest.mark.integration
+@pytest.mark.security
+def test_signup_uses_unique_salts_for_identical_passwords(auth_manager_factory):
+    manager = auth_manager_factory()
+    assert manager.signup("user1", "same_password") is True
+    assert manager.signup("user2", "same_password") is True
+
+    user1_row = manager.db.execute("SELECT password_hash FROM users WHERE username = 'user1'").fetchone()
+    user2_row = manager.db.execute("SELECT password_hash FROM users WHERE username = 'user2'").fetchone()
+
+    # Hashes must differ even though passwords are identical
+    assert user1_row[0] != user2_row[0]
+    assert manager.verify_password("same_password", user1_row[0]) is True
+    assert manager.verify_password("same_password", user2_row[0]) is True
 
 
 @pytest.mark.integration

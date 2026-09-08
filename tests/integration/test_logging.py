@@ -37,7 +37,7 @@ def test_setup_logger_writes_role_and_message_to_console_and_file(monkeypatch, t
         for handler in root_logger.handlers:
             handler.flush()
 
-        log_text = (tmp_path / "app_phase_one.log").read_text(encoding="utf-8")
+        log_text = (tmp_path / "Log" / "app_phase_one.log").read_text(encoding="utf-8")
         assert "PHASE_ONE" in console.getvalue()
         assert "model logging is ready" in console.getvalue()
         assert "PHASE_ONE" in log_text
@@ -63,12 +63,12 @@ def test_first_logging_configuration_remains_active(monkeypatch, tmp_path):
         for handler in root_logger.handlers:
             handler.flush()
 
-        first_log = (tmp_path / "app_first.log").read_text(encoding="utf-8")
+        first_log = (tmp_path / "Log" / "app_first.log").read_text(encoding="utf-8")
         assert "FIRST" in first_log
         assert "only the first setup applies" in first_log
-        if (tmp_path / "app_second.log").exists():
+        if (tmp_path / "Log" / "app_second.log").exists():
             assert "only the first setup applies" not in (
-                tmp_path / "app_second.log"
+                tmp_path / "Log" / "app_second.log"
             ).read_text(encoding="utf-8")
         assert "SECOND" not in first_console.getvalue()
         assert second_console.getvalue() == ""
@@ -84,4 +84,4 @@ def test_controlled_server_import_creates_state_database_only_in_temp_directory(
 
     assert state.CLIENTS == {}
     assert state.ROOMS == {}
-    assert (tmp_path / "users.db").is_file()
+    assert (tmp_path / "DB" / "users.db").is_file()
